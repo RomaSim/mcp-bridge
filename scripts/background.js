@@ -1,5 +1,5 @@
 /**
- * background.js (Corrected with robust async message handling)
+ * background.js (Исправлено с надёжной асинхронной обработкой сообщений)
  */
 
 import * as apiClient from '../modules/api_client.js';
@@ -7,7 +7,7 @@ import * as promptBuilder from '../modules/prompt_builder.js';
 import {getConfig} from "../modules/api_client.js";
 import { detectConflicts } from '../scripts/conflict_detector.js';
 
-// --- 插件生命周期事件 ---
+// --- События жизненного цикла расширения ---
 chrome.runtime.onInstalled.addListener(async (details) => {
     if (details.reason === 'install' || details.reason === 'update') {
         try {
@@ -21,7 +21,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     }
 });
 
-// --- 页面加载处理 ---
+// --- Обработка загрузки страницы ---
 chrome.webNavigation.onCompleted.addListener(async (details) => {
     if (details.frameId === 0) {
         try {
@@ -30,11 +30,11 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
                 await chrome.tabs.sendMessage(details.tabId, {type: 'STORE_API_LIST', payload: api_list});
             }
             const hostname = new URL(details.url).hostname;
-            // 命中 AI 站点时触发冲突检测
+            // При попадании на AI-сайт запустить проверку конфликтов
             if (api_list?.some(site => site.hostname === hostname)) {
                 detectConflicts();
             }
-            // 冲突站点通知 — 从缓存取扩展名
+            // Уведомление о конфликтном сайте — получить имя расширения из кэша
             if (conflict_disabled_sites.includes(hostname)) {
                 const { conflict_extension_cache } = await chrome.storage.local.get('conflict_extension_cache');
                 let conflictExtName = '';
@@ -48,12 +48,12 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
                 }
                 await chrome.tabs.sendMessage(details.tabId, {type: 'SHOW_CONFLICT_NOTICE', payload: {hostname, conflictExtName}});
             }
-        } catch (error) { /* 忽略 */
+        } catch (error) { /* игнорировать */
         }
     }
 });
 
-// --- 消息监听与路由 (+++ 关键修正: 使用 async 和 try/catch 保证响应 +++) ---
+// --- Прослушивание и маршрутизация сообщений (+++ ключевое исправление: использовать async и try/catch для гарантии ответа +++) ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const {type, payload} = message;
 
@@ -76,7 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse({success: true});
                         return;
                     case 'XHR_RESPONSE_CHUNK':
-                        // 处理流式响应的中间块
+                        // Обработка промежуточного блока потокового ответа
                         await handleResponseChunk(tabId, payload);
                         sendResponse({success: true});
                         return;
@@ -86,7 +86,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     case 'XHR_RESPONSE_COMPLETE':
                         await handleResponseComplete(tabId, payload);
-                        sendResponse({success: true}); // 即使没有返回值，也确认收到
+                        sendResponse({success: true}); // Даже если нет возвращаемого значения, подтвердить получение
                         return;
                     case 'GET_CONFIG':
                         const config = await apiClient.getConfig();
@@ -97,12 +97,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse(updateResult);
                         return;
                     case 'REDETECT_FROM_UI':
-                        // 从最后一条 UI 消息重新检测工具调用
+                        // Повторно определить вызов инструмента из последнего UI-сообщения
                         await handleRedetectFromUI(tabId);
                         sendResponse({ success: true });
                         return;
                     case 'MANUAL_TOOL_PARSE':
-                        // 处理用户手动粘贴的内容
+                        // Обработать содержимое, вставленное пользователем вручную
                         await handleManualToolParse(tabId, payload.content);
                         sendResponse({ success: true });
                         return;
@@ -118,7 +118,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse(refreshResult);
                         return;
                     case 'REFRESH_SYSTEM_PROMPT_FROM_PANEL':
-                        // 从状态面板触发，需要获取发送者的tabId
+                        // Вызвано из панели состояния, нужно получить tabId отправителя
                         if (sender.tab?.id) {
                             const panelRefreshResult = await handleRefreshSystemPrompt(sender.tab.id);
                             sendResponse(panelRefreshResult);
@@ -130,21 +130,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
         } catch (error) {
             console.error(`MCP Bridge: Error handling message type ${type}:`, error);
-            // 发生任何错误，都返回一个错误信息，确保端口不会挂起
+            // При любой ошибке вернуть информацию об ошибке, чтобы порт не завис
             sendResponse({error: error.message});
         }
     })();
 
-    return true; // 始终返回 true，因为我们总是异步处理
+    return true; // Всегда возвращать true, так как мы всегда обрабатываем асинхронно
 });
 
 /**
- * 处理请求体，在发送到服务器前修改请求内容
- * @param {number} tabId - 浏览器标签页ID
- * @param {Object} payload - 请求载荷数据
- * @param {string} payload.url - 请求URL
- * @param {string} payload.body - 请求体内容（JSON字符串）
- * @returns {Promise<Object>} 修改后的响应对象
+ * Обработать тело запроса, изменив его содержимое перед отправкой на сервер
+ * @param {number} tabId - ID вкладки браузера
+ * @param {Object} payload - Данные полезной нагрузки запроса
+ * @param {string} payload.url - URL запроса
+ * @param {string} payload.body - Содержимое тела запроса (JSON-строка)
+ * @returns {Promise<Object>} Изменённый объект ответа
  */
 async function handleRequestBody(tabId, payload) {
     const {mcp_enabled} = await chrome.storage.local.get('mcp_enabled');
@@ -160,10 +160,10 @@ async function handleRequestBody(tabId, payload) {
     const siteConfig = getSiteConfig(payload.url, api_list);
     if (!siteConfig) return createResponse(payload.body);
 
-    // 检查是否跳过请求修改（仅监听响应模式）
+    // Проверить, нужно ли пропустить модификацию запроса (режим только прослушивания ответа)
     if (siteConfig.skipRequestModification) {
         console.log('[MCP Bridge] Skip request modification, only monitoring response');
-        // 即使跳过请求修改，也要设置状态为等待响应，以便检测工具调用
+        // Даже если пропускаем модификацию запроса, нужно установить состояние ожидания ответа для обнаружения вызова инструмента
         await setTabState(tabId, {status: 'AWAITING_RESPONSE', currentToolCallKey: null, resultInjected: false});
         return createResponse(payload.body);
     }
@@ -175,17 +175,17 @@ async function handleRequestBody(tabId, payload) {
     const shouldAlwaysInject = always_inject[siteConfig.hostname] || false;
 
     if (!disable_first_inject[siteConfig.hostname] && !conflict_disabled_sites.includes(siteConfig.hostname) && (isNewConversation || shouldAlwaysInject)) {
-        await updateUIPanel(tabId, 'EXECUTING', '正在构建并注入 MCP Prompt...');
-        const services = await apiClient.getServices(); // 如果这里失败，会被外层 try/catch 捕获
+        await updateUIPanel(tabId, 'EXECUTING', 'Построение и внедрение MCP Prompt...');
+        const services = await apiClient.getServices(); // Если тут ошибка — она будет перехвачена внешним try/catch
         const initialPrompt = promptBuilder.buildInitialPrompt(services);
         const reminderPrompt = promptBuilder.buildReminderPrompt();
 
-        // 支持单个路径或多个路径
+        // Поддержка одного пути или массива путей
         const promptPaths = Array.isArray(siteConfig.promptPath) ? siteConfig.promptPath : [siteConfig.promptPath];
         
-        // 对每个路径都进行注入
+        // Внедрить для каждого пути
         for (const path of promptPaths) {
-            // 如果配置了 promptFilter，必须同时配置 promptSetFilter
+            // Если настроен promptFilter, обязательно должен быть настроен и promptSetFilter
             if (siteConfig.promptFilter && !siteConfig.promptSetFilter) {
                 console.warn('[MCP Bridge] promptFilter is configured but promptSetFilter is missing. Both are required for custom logic.');
             }
@@ -196,19 +196,19 @@ async function handleRequestBody(tabId, payload) {
         }
 
         const modifiedBody = JSON.stringify(bodyJson);
-        // 新对话开始，清除之前的工具调用状态
+        // Начало нового диалога — очистить предыдущее состояние вызова инструмента
         await setTabState(tabId, {status: 'AWAITING_RESPONSE', currentToolCallKey: null, resultInjected: false});
         return createResponse(modifiedBody);
     }
 
-    // 即使不注入 prompt，也要清除上一次的工具调用状态（新的用户消息）
-    // 修复：每次新的用户消息都应该清空 currentToolCallKey，否则相同的工具调用会被去重跳过
+    // Даже если prompt не внедряется, очистить состояние предыдущего вызова инструмента (новое сообщение пользователя)
+    // Исправление: каждое новое сообщение пользователя должно очищать currentToolCallKey, иначе одинаковые вызовы инструментов будут пропускаться при дедупликации
     await setTabState(tabId, {status: 'AWAITING_RESPONSE', currentToolCallKey: null, resultInjected: false});
     return createResponse(payload.body);
 }
 
 /**
- * 处理流式响应的中间块（检测工具调用）
+ * Обработать промежуточный блок потокового ответа (обнаружение вызова инструмента)
  */
 async function handleResponseChunk(tabId, payload) {
     if (!payload || typeof payload.fullText !== 'string') return;
@@ -216,9 +216,9 @@ async function handleResponseChunk(tabId, payload) {
     const {mcp_enabled} = await chrome.storage.local.get('mcp_enabled');
     if (!mcp_enabled) return;
 
-    // 检查是否包含完整的工具调用标签
-    // 高容错:开头和结尾的 < > 都是可选的,兼容 SSE 解析丢失字符的情况
-    // 匹配: <tool_code> 或 tool_code> 或 <tool_code 或 tool_code
+    // Проверить наличие полного тега вызова инструмента
+    // Высокая отказоустойчивость: начальные и конечные < > необязательны, совместимо со случаями потери символов при разборе SSE
+    // Совпадение: <tool_code> или tool_code> или <tool_code или tool_code
     const toolCallMatch = payload.fullText.match(/<?\s*tool_code\s*>?([\s\S]*?)<\s*\/\s*tool_code\s*>/);
     if (!toolCallMatch) return;
 
@@ -227,8 +227,8 @@ async function handleResponseChunk(tabId, payload) {
 
     console.log('[MCP Bridge] Tool call detected in stream chunk:', toolCallJson);
 
-    // 检查是否已经处理过这个工具调用（避免重复触发）
-    // 使用 JSON 内容而不是原始字符串来判断，避免格式差异导致的误判
+    // Проверить, не обработан ли уже этот вызов инструмента (во избежание повторного срабатывания)
+    // Использовать содержимое JSON, а не исходную строку, чтобы избежать ложных срабатываний из-за различий в формате
     const state = await getTabState(tabId);
     const toolCallKey = JSON.stringify({ tool_name: toolCallJson.tool_name, arguments: toolCallJson.arguments });
     
@@ -237,13 +237,13 @@ async function handleResponseChunk(tabId, payload) {
         return;
     }
     
-    // 检查是否已经发送过结果（防止重复注入）
+    // Проверить, был ли уже отправлен результат (защита от повторного внедрения)
     if (state.resultInjected) {
         console.log('[MCP Bridge] Result already injected, skipping');
         return;
     }
 
-    // 记录当前工具调用，避免重复处理
+    // Записать текущий вызов инструмента, чтобы избежать повторной обработки
     await setTabState(tabId, { ...state, currentToolCallKey: toolCallKey });
 
     const {tool_name, arguments: args} = toolCallJson;
@@ -270,19 +270,19 @@ async function handleResponseComplete(tabId, payload) {
     let fullText = payload.fullText;
     const siteConfig = getSiteConfig(payload.url, api_list);
     
-    // 如果配置了 UI 解析，根据优先级决定是否使用 DOM 解析
+    // Если настроен UI-разбор, в зависимости от приоритета решить, использовать ли DOM-разбор
     if (siteConfig?.uiParsing?.enabled && siteConfig.uiParsing.messageContainer) {
         const uiPriority = siteConfig.uiParsing.priority || 'api';
         let shouldTryUI = false;
         let shouldReplaceText = false;
         
         if (uiPriority === 'ui') {
-            // UI 优先：直接使用 UI 解析，替换 API 结果
+            // UI в приоритете: сразу использовать UI-разбор, заменив API-результат
             shouldTryUI = true;
             shouldReplaceText = true;
             console.log('[MCP Bridge] UI parsing priority: using DOM content');
         } else {
-            // API 优先：只在 API 失败时使用 UI 解析
+            // API в приоритете: использовать UI-разбор только при сбое API
             shouldTryUI = !fullText || fullText.trim() === '';
             shouldReplaceText = shouldTryUI;
             if (shouldTryUI) {
@@ -308,14 +308,14 @@ async function handleResponseComplete(tabId, payload) {
         }
     }
 
-    // 检查是否已经处理过工具调用（避免 chunk 和 complete 重复处理）
+    // Проверить, не обработан ли уже вызов инструмента (во избежание двойной обработки chunk и complete)
     const state = await getTabState(tabId);
     
-    // 高容错:开头和结尾的 < > 都是可选的
+    // Высокая отказоустойчивость: начальные и конечные < > необязательны
     const toolCallMatch = fullText.match(/<?\s*tool_code\s*>?([\s\S]*?)<\s*\/\s*tool_code\s*>/);
     if (!toolCallMatch) {
         if (state.status === 'AWAITING_RESPONSE') {
-            await updateUIPanel(tabId, 'SUCCESS', '响应完成，未发现工具调用。');
+            await updateUIPanel(tabId, 'SUCCESS', 'Ответ завершён, вызовов инструментов не обнаружено.');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             await clearTabState(tabId);
         }
@@ -324,29 +324,29 @@ async function handleResponseComplete(tabId, payload) {
 
     const toolCallJson = parseJsonSafely(toolCallMatch[1]);
     if (!toolCallJson || !toolCallJson.tool_name) {
-        // 把错误信息发送给模型
+        // Отправить сообщение об ошибке модели
         try {
             JSON.parse(toolCallMatch[1])
         } catch (e) {
-            await injectToolResult(tabId, `**工具调用失败！** \n\n错误信息:\n\n${e.message}`)
-            // 标记已注入
+            await injectToolResult(tabId, `**Ошибка вызова инструмента!** \n\nСообщение об ошибке:\n\n${e.message}`)
+            // Пометить как внедрённое
             await setTabState(tabId, { ...state, resultInjected: true });
         }
 
-        await updateUIPanel(tabId, 'ERROR', '模型尝试调用工具，但格式不正确。');
+        await updateUIPanel(tabId, 'ERROR', 'Модель пыталась вызвать инструмент, но формат неверен.');
         return;
     }
 
-    // 使用 JSON 内容而不是原始字符串来判断，避免 API 和 UI 解析的格式差异
+    // Использовать содержимое JSON, а не исходную строку, чтобы избежать различий в формате разбора API и UI
     const toolCallKey = JSON.stringify({ tool_name: toolCallJson.tool_name, arguments: toolCallJson.arguments });
     
-    // 如果已经处理过相同的工具调用，直接返回
+    // Если тот же вызов инструмента уже обработан — просто вернуться
     if (state.currentToolCallKey === toolCallKey) {
         console.log('[MCP Bridge] Tool call already processed in chunk handler, skipping complete');
         return;
     }
     
-    // 如果已经注入过结果，也不再处理
+    // Если результат уже внедрён, тоже не обрабатывать
     if (state.resultInjected) {
         console.log('[MCP Bridge] Result already injected, skipping complete');
         return;
@@ -354,7 +354,7 @@ async function handleResponseComplete(tabId, payload) {
 
     console.log('[MCP Bridge] Parsed tool call:', toolCallJson);
 
-    // 记录当前工具调用
+    // Записать текущий вызов инструмента
     await setTabState(tabId, { ...state, currentToolCallKey: toolCallKey });
 
     const {tool_name, arguments: args} = toolCallJson;
@@ -367,29 +367,29 @@ async function handleResponseComplete(tabId, payload) {
 
 async function handleListTools(tabId, serviceName) {
     try {
-        await updateUIPanel(tabId, 'EXECUTING', `查询服务 <strong>${serviceName}</strong> 的工具...`);
+        await updateUIPanel(tabId, 'EXECUTING', `Запрос инструментов сервиса <strong>${serviceName}</strong>...`);
         const response = await apiClient.getToolsByServer(serviceName);
         
-        // 服务端现在返回 { service_name, service_description, tools: [...] }
+        // Сервер теперь возвращает { service_name, service_description, tools: [...] }
         const serviceDescription = response.service_description || '';
         const tools = response.tools || [];
         
-        // 构建工具列表的 JSON 数组格式
+        // Построить JSON-массив списка инструментов
         const toolsData = tools.map(t => ({
             name: t.name,
             description: t.description,
             parameters: t.parameters || {}
         }));
         
-        // 包含服务描述在返回结果中
-        const resultText = `服务 "${serviceName}" 的信息:\n\n**服务描述**: ${serviceDescription}\n\n**工具列表**:\n\`\`\`json\n${JSON.stringify(toolsData, null, 2)}\n\`\`\``;
+        // Включить описание сервиса в возвращаемый результат
+        const resultText = `Информация о сервисе "${serviceName}":\n\n**Описание сервиса**: ${serviceDescription}\n\n**Список инструментов**:\n\`\`\`json\n${JSON.stringify(toolsData, null, 2)}\n\`\`\``;
         
-        await updateUIPanel(tabId, 'SUCCESS', `已获取工具列表，正在反馈给模型...`);
+        await updateUIPanel(tabId, 'SUCCESS', `Список инструментов получен, передача модели...`);
         
-        // 使用智能输入注入代替页面刷新
+        // Использовать умное внедрение вместо перезагрузки страницы
         await injectToolResult(tabId, resultText);
         
-        // 标记结果已注入，防止重复发送，但保留 currentToolCall
+        // Пометить результат как внедрённый, чтобы избежать повторной отправки, но сохранить currentToolCall
         const state = await getTabState(tabId);
         await setTabState(tabId, { ...state, resultInjected: true });
     } catch (error) {
@@ -399,7 +399,7 @@ async function handleListTools(tabId, serviceName) {
 
 async function handleExecuteTool(tabId, toolName, args) {
     try {
-        // 特殊处理：缓存相关工具
+        // Специальная обработка: инструменты, связанные с кэшем
         if (toolName === 'get_cached_result') {
             await handleGetCachedResult(tabId, args);
             return;
@@ -413,20 +413,20 @@ async function handleExecuteTool(tabId, toolName, args) {
             return;
         }
         
-        await updateUIPanel(tabId, 'EXECUTING', `执行工具: <strong>${toolName}</strong>...`, {
-            title: '参数',
+        await updateUIPanel(tabId, 'EXECUTING', `Выполнение инструмента: <strong>${toolName}</strong>...`, {
+            title: 'Параметры',
             content: JSON.stringify(args, null, 2)
         });
         const result = await apiClient.executeTool(toolName, args);
         
-        // 检查是否是缓存引用
+        // Проверить, является ли это ссылкой на кэш
         if (result.result_type === 'cached_reference') {
-            // 使用新的格式化函数处理缓存引用
+            // Использовать новую функцию форматирования для ссылки на кэш
             const resultText = promptBuilder.formatCachedResultForModel(toolName, result);
             
             await updateUIPanel(tabId, 'SUCCESS', 
-                `工具执行成功，结果已缓存(${(result.total_size/1024).toFixed(2)}KB)`, {
-                title: '缓存信息',
+                `Инструмент выполнен успешно, результат закэширован (${(result.total_size/1024).toFixed(2)} КБ)`, {
+                title: 'Информация о кэше',
                 content: JSON.stringify({
                     cache_id: result.cache_id,
                     cache_type: result.cache_type,
@@ -436,18 +436,18 @@ async function handleExecuteTool(tabId, toolName, args) {
             
             await injectToolResult(tabId, resultText);
         } else {
-            // 原有逻辑：直接结果
+            // Прежняя логика: прямой результат
             const resultText = promptBuilder.formatToolResultForModel(toolName, result);
             
-            await updateUIPanel(tabId, 'SUCCESS', `工具执行成功，正在反馈给模型...`, {
-                title: '结果',
+            await updateUIPanel(tabId, 'SUCCESS', `Инструмент выполнен успешно, передача модели...`, {
+                title: 'Результат',
                 content: JSON.stringify(result, null, 2)
             });
             
             await injectToolResult(tabId, resultText);
         }
         
-        // 标记结果已注入，防止重复发送，但保留 currentToolCall
+        // Пометить результат как внедрённый, чтобы избежать повторной отправки, но сохранить currentToolCall
         const state = await getTabState(tabId);
         await setTabState(tabId, { ...state, resultInjected: true });
     } catch (error) {
@@ -457,31 +457,31 @@ async function handleExecuteTool(tabId, toolName, args) {
 }
 
 /**
- * 处理获取缓存结果的工具调用
+ * Обработать вызов инструмента получения кэшированного результата
  */
 async function handleGetCachedResult(tabId, args) {
     try {
         const { cache_id, start, end } = args;
         
         if (!cache_id) {
-            throw new Error('缺少必需参数: cache_id');
+            throw new Error('Отсутствует обязательный параметр: cache_id');
         }
         
         await updateUIPanel(tabId, 'EXECUTING', 
-            `正在获取缓存内容... ${start !== undefined ? `(${start}-${end || '末尾'})` : '(完整)'}`);
+            `Получение содержимого кэша... ${start !== undefined ? `(${start}-${end || 'конец'})` : '(полное)'}`);
         
         const result = await apiClient.getCachedResult(cache_id, start, end);
         
-        // 格式化返回给模型
+        // Форматировать результат для возврата модели
         const hasMore = result.metadata.has_more || false;
         const actualStart = result.metadata.start || start || 0;
         const actualEnd = result.metadata.end || end || result.metadata.total_length;
-        const totalLength = result.metadata.total_length || '未知';
+        const totalLength = result.metadata.total_length || 'неизвестно';
         
-        // 计算本次获取的数量
+        // Вычислить количество полученных символов
         const fetchedCount = actualEnd - actualStart;
         
-        // 格式化内容：如果是对象则序列化为 JSON
+        // Форматировать содержимое: если это объект, сериализовать в JSON
         let contentStr;
         if (typeof result.content === 'string') {
             contentStr = result.content;
@@ -491,27 +491,27 @@ async function handleGetCachedResult(tabId, args) {
             contentStr = String(result.content);
         }
         
-        // 计算内容的行数（如果是字符串）
+        // Вычислить число строк содержимого (если это строка)
         const contentLines = typeof result.content === 'string' 
             ? result.content.split('\n').length 
             : (Array.isArray(result.content) ? result.content.length : 1);
         
         const resultText = `
-# 缓存内容获取结果
+# Результат получения содержимого кэша
 
-**缓存ID**: \`${cache_id}\`  
-**总字符数**: ${totalLength}  
-**本次获取**: ${actualStart} - ${actualEnd} (共 ${fetchedCount} 字符${contentLines > 1 ? `, ${contentLines} 行` : ''})  
-**是否还有更多**: ${hasMore ? `是 (剩余 ${totalLength - actualEnd} 字符)` : '否'}
+**ID кэша**: \`${cache_id}\`  
+**Всего символов**: ${totalLength}  
+**Получено в этот раз**: ${actualStart} - ${actualEnd} (всего ${fetchedCount} символов${contentLines > 1 ? `, ${contentLines} строк` : ''})  
+**Есть ли ещё**: ${hasMore ? `Да (осталось ${totalLength - actualEnd} символов)` : 'Нет'}
 
-**内容**:
+**Содержимое**:
 \`\`\`
 ${contentStr}
 \`\`\`
 
 ${hasMore ? `
 ---
-继续获取下一段：
+Получить следующий фрагмент:
 \`\`\`xml
 <tool_code>
 {
@@ -528,7 +528,7 @@ ${hasMore ? `
 `.trim();
         
         await updateUIPanel(tabId, 'SUCCESS', 
-            `缓存内容获取成功 (${actualStart}-${actualEnd}/${totalLength})`);
+            `Содержимое кэша получено (${actualStart}-${actualEnd}/${totalLength})`);
         
         await injectToolResult(tabId, resultText);
         
@@ -538,10 +538,10 @@ ${hasMore ? `
     } catch (error) {
         console.error('[MCP Bridge] Get cached result error:', error);
         
-        // 特殊处理缓存过期错误
+        // Специальная обработка ошибки истечения кэша
         let errorMessage = error.message;
         if (errorMessage.includes('不存在') || errorMessage.includes('过期') || errorMessage.includes('404')) {
-            errorMessage = `缓存已过期或不存在。缓存的有效期为5分钟，可能已超时。建议重新执行原始工具获取最新数据。`;
+            errorMessage = `Кэш истёк или не существует. Срок жизни кэша составляет 5 минут, возможно, он уже истёк. Рекомендуется повторно выполнить исходный инструмент для получения актуальных данных.`;
         }
         
         await handleToolError(tabId, 'get_cached_result', new Error(errorMessage));
@@ -549,42 +549,42 @@ ${hasMore ? `
 }
 
 /**
- * 处理搜索缓存结果的工具调用
+ * Обработать вызов инструмента поиска в кэше
  */
 async function handleSearchCachedResult(tabId, args) {
     try {
         const { cache_id, keyword, case_sensitive = false, max_results = 50 } = args;
         
         if (!cache_id || !keyword) {
-            throw new Error('缺少必需参数: cache_id 或 keyword');
+            throw new Error('Отсутствуют обязательные параметры: cache_id или keyword');
         }
         
-        await updateUIPanel(tabId, 'EXECUTING', `正在搜索关键词 "${keyword}"...`);
+        await updateUIPanel(tabId, 'EXECUTING', `Поиск ключевого слова "${keyword}"...`);
         
         const result = await apiClient.searchCachedResult(cache_id, keyword, case_sensitive, max_results);
         
-        // 格式化搜索结果
+        // Форматировать результаты поиска
         const matchCount = result.total_matches;
         const truncated = result.truncated;
         
-        // 限制显示前20个结果
+        // Ограничить отображение первыми 20 результатами
         const displayMatches = result.matches.slice(0, 20);
         const matchList = displayMatches.map(m => 
-            `- 第 ${m.line} 行，第 ${m.column} 列: ${m.content}`
+            `- Строка ${m.line}, столбец ${m.column}: ${m.content}`
         ).join('\n');
         
         const resultText = `
-# 缓存搜索结果
+# Результаты поиска в кэше
 
-**关键词**: "${keyword}"  
-**找到**: ${matchCount} 处匹配${truncated ? ' (已截断至前50个)' : ''}  
-**区分大小写**: ${case_sensitive ? '是' : '否'}
+**Ключевое слово**: "${keyword}"  
+**Найдено**: ${matchCount} совпадений${truncated ? ' (обрезано до первых 50)' : ''}  
+**С учётом регистра**: ${case_sensitive ? 'Да' : 'Нет'}
 
-**匹配位置**${displayMatches.length < matchCount ? ` (显示前${displayMatches.length}个)` : ''}:
+**Позиции совпадений**${displayMatches.length < matchCount ? ` (показаны первые ${displayMatches.length})` : ''}:
 ${matchList}
 
 ${matchCount > 0 ? `
-你可以使用 \`get_cache_context\` 获取指定行的上下文：
+Ты можешь использовать \`get_cache_context\` для получения контекста указанной строки:
 \`\`\`xml
 <tool_code>
 {
@@ -598,11 +598,11 @@ ${matchCount > 0 ? `
 </tool_code>
 \`\`\`
 
-或使用 \`get_cached_result\` 精确获取这些行附近的内容。
-` : '未找到匹配内容。'}
+Или использовать \`get_cached_result\` для точного получения содержимого возле этих строк.
+` : 'Совпадений не найдено.'}
 `.trim();
         
-        await updateUIPanel(tabId, 'SUCCESS', `搜索完成，找到 ${matchCount} 处匹配`);
+        await updateUIPanel(tabId, 'SUCCESS', `Поиск завершён, найдено ${matchCount} совпадений`);
         
         await injectToolResult(tabId, resultText);
         
@@ -616,33 +616,33 @@ ${matchCount > 0 ? `
 }
 
 /**
- * 处理获取缓存上下文的工具调用
+ * Обработать вызов инструмента получения контекста из кэша
  */
 async function handleGetCacheContext(tabId, args) {
     try {
         const { cache_id, line_num, context_lines = 3 } = args;
         
         if (!cache_id || !line_num) {
-            throw new Error('缺少必需参数: cache_id 或 line_num');
+            throw new Error('Отсутствуют обязательные параметры: cache_id или line_num');
         }
         
-        await updateUIPanel(tabId, 'EXECUTING', `正在获取第 ${line_num} 行的上下文...`);
+        await updateUIPanel(tabId, 'EXECUTING', `Получение контекста строки ${line_num}...`);
         
         const result = await apiClient.getCacheContext(cache_id, line_num, context_lines);
         
         const resultText = `
-# 缓存上下文
+# Контекст из кэша
 
-**目标行**: 第 ${result.target_line} 行  
-**上下文范围**: 第 ${result.context_start} - ${result.context_end} 行 (共 ${result.total_lines} 行)
+**Целевая строка**: строка ${result.target_line}  
+**Диапазон контекста**: строки ${result.context_start} - ${result.context_end} (всего ${result.total_lines} строк)
 
-**内容**:
+**Содержимое**:
 \`\`\`
 ${result.content}
 \`\`\`
 `.trim();
         
-        await updateUIPanel(tabId, 'SUCCESS', `上下文获取成功`);
+        await updateUIPanel(tabId, 'SUCCESS', `Контекст получен успешно`);
         
         await injectToolResult(tabId, resultText);
         
@@ -656,36 +656,36 @@ ${result.content}
 }
 
 async function handleToolError(tabId, toolName, error) {
-    // 构建详细的错误信息
-    let errorMessage = error.message || '未知错误';
+    // Построить подробное сообщение об ошибке
+    let errorMessage = error.message || 'Неизвестная ошибка';
     let errorDetails = errorMessage;
-    let fullErrorText = errorMessage; // 用于注入到输入框的完整错误
+    let fullErrorText = errorMessage; // Полная ошибка для внедрения в поле ввода
     
-    // 如果有详细错误对象,提取更多信息
+    // Если есть подробный объект ошибки, извлечь больше информации
     if (error.details && typeof error.details === 'object') {
         const details = error.details;
         errorMessage = details.error || errorMessage;
         
-        // 构建详细错误信息(用于浮窗显示)
-        const errorParts = [`错误类型: ${details.type || 'Error'}`];
-        errorParts.push(`错误信息: ${details.error || errorMessage}`);
+        // Построить подробную информацию об ошибке (для отображения во всплывающем окне)
+        const errorParts = [`Тип ошибки: ${details.type || 'Error'}`];
+        errorParts.push(`Сообщение об ошибке: ${details.error || errorMessage}`);
         
         if (details.traceback) {
-            errorParts.push(`\n调用堆栈:\n${details.traceback}`);
+            errorParts.push(`\nСтек вызовов:\n${details.traceback}`);
         }
         
         errorDetails = errorParts.join('\n');
         
-        // 构建用于注入的完整错误(包含类型和堆栈)
+        // Построить полную ошибку для внедрения (включая тип и стек)
         fullErrorText = errorMessage;
         if (details.type) {
             fullErrorText = `[${details.type}] ${fullErrorText}`;
         }
         if (details.traceback) {
-            // 截取堆栈的关键部分(最后几行通常最有用)
+            // Взять ключевую часть стека (последние строки обычно самые полезные)
             const tracebackLines = details.traceback.split('\n');
-            const importantLines = tracebackLines.slice(-10); // 取最后10行
-            fullErrorText += `\n\n调用堆栈:\n${importantLines.join('\n')}`;
+            const importantLines = tracebackLines.slice(-10); // Взять последние 10 строк
+            fullErrorText += `\n\nСтек вызовов:\n${importantLines.join('\n')}`;
         }
     }
     
@@ -693,25 +693,25 @@ async function handleToolError(tabId, toolName, error) {
     
     const errorText = promptBuilder.formatToolErrorForModel(toolName, fullErrorText);
     
-    await updateUIPanel(tabId, 'ERROR', `工具 <strong>${toolName}</strong> 执行失败`, {
-        title: '错误详情',
+    await updateUIPanel(tabId, 'ERROR', `Инструмент <strong>${toolName}</strong> не выполнился`, {
+        title: 'Подробности ошибки',
         content: errorDetails
     });
     
-    // 使用智能输入注入代替页面刷新
+    // Использовать умное внедрение вместо перезагрузки страницы
     await injectToolResult(tabId, errorText);
     
-    // 标记结果已注入，防止重复发送，但保留 currentToolCall
+    // Пометить результат как внедрённый, чтобы избежать повторной отправки, но сохранить currentToolCall
     const state = await getTabState(tabId);
     await setTabState(tabId, { ...state, resultInjected: true });
 }
 
 /**
- * 注入工具执行结果到输入框并发送
+ * Внедрить результат выполнения инструмента в поле ввода и отправить
  */
 async function injectToolResult(tabId, resultText) {
     try {
-        // 获取当前网站的配置
+        // Получить конфигурацию текущего сайта
         const {api_list} = await chrome.storage.local.get('api_list');
         const currentHostname = await getCurrentHostname(tabId);
         const siteConfig = api_list?.find(site => site.hostname === currentHostname);
@@ -721,7 +721,7 @@ async function injectToolResult(tabId, resultText) {
             return;
         }
 
-        // 发送消息到 content script 执行注入
+        // Отправить сообщение в content script для выполнения внедрения
         await chrome.tabs.sendMessage(tabId, {
             type: 'INJECT_TEXT_AND_SUBMIT',
             payload: {
@@ -735,7 +735,7 @@ async function injectToolResult(tabId, resultText) {
 }
 
 /**
- * 获取标签页的 hostname
+ * Получить hostname вкладки
  */
 async function getCurrentHostname(tabId) {
     try {
@@ -805,57 +805,57 @@ function parseJsonSafely(str) {
     }
 }
 
-// 修正：为不同网站提供更准确的新对话判断
+// Исправление: более точное определение нового диалога для разных сайтов
 /**
- * 检查是否是新对话
- * @param {object} body - 请求体对象
- * @param {object} siteConfig - 站点配置
- * @returns {boolean} - 是否是新对话
+ * Проверить, является ли это новым диалогом
+ * @param {object} body - Объект тела запроса
+ * @param {object} siteConfig - Конфигурация сайта
+ * @returns {boolean} - Является ли это новым диалогом
  */
 function checkIsNewConversation(body, siteConfig) {
-    // 如果配置了 newConversationFlag，使用配置化的判断逻辑
+    // Если настроен newConversationFlag, использовать сконфигурированную логику
     if (siteConfig.newConversationFlag) {
         const flag = siteConfig.newConversationFlag;
         
-        // 获取要检查的字段值
+        // Получить значение проверяемого поля
         let value;
         if (flag.from === 'requestBody') {
-            // 从请求体中获取值（这里不应用 promptFilter，因为只是检查标志）
+            // Получить значение из тела запроса (здесь promptFilter не применяется, так как проверяется только флаг)
             value = getByPath(body, flag.path, siteConfig.isJsonString, null);
         }
-        // 未来可以扩展其他来源，如 headers, url 等
+        // В будущем можно расширить другими источниками: headers, url и т. д.
         
-        // 根据检查类型进行判断
+        // Выполнить проверку в зависимости от типа
         if (flag.checkExists !== undefined && flag.checkExists !== null) {
-            // 检查字段是否存在
+            // Проверить существование поля
             if (flag.checkExists === true) {
-                // 期望字段存在
+                // Ожидается наличие поля
                 const exists = value !== undefined && value !== null;
                 
-                // 如果还需要检查具体值
+                // Если также нужно проверить конкретное значение
                 if (exists && flag.checkValue !== undefined && flag.checkValue !== null) {
                     return checkValueMatch(value, flag.checkValue, flag.valueType);
                 }
                 
                 return exists;
             } else {
-                // 期望字段不存在
+                // Ожидается отсутствие поля
                 return value === undefined || value === null;
             }
         }
         
-        // 如果只配置了 checkValue，直接比较值
+        // Если настроено только checkValue, сразу сравнить значения
         if (flag.checkValue !== undefined && flag.checkValue !== null) {
             return checkValueMatch(value, flag.checkValue, flag.valueType);
         }
         
-        // 如果配置不完整，返回 false（不是新对话）
+        // Если конфигурация неполная, вернуть false (не новый диалог)
         console.warn('[MCP Bridge] Invalid newConversationFlag config:', flag);
         return false;
     }
     
-    // 没有配置 newConversationFlag，使用旧的硬编码逻辑
-    // 保持向后兼容
+    // Нет newConversationFlag — использовать старую жёстко закодированную логику
+    // Обратная совместимость
     if (siteConfig.name === 'chatgpt' && body.parent_message_id) {
         return body.parent_message_id.includes('00000000-0000-0000-0000-000000000000');
     }
@@ -865,20 +865,20 @@ function checkIsNewConversation(body, siteConfig) {
 }
 
 /**
- * 检查值是否匹配
- * @param {any} actualValue - 实际值
- * @param {any} expectedValue - 期望值
- * @param {string} valueType - 值类型 (string, number, boolean, null)
- * @returns {boolean} - 是否匹配
+ * Проверить, совпадает ли значение
+ * @param {any} actualValue - Фактическое значение
+ * @param {any} expectedValue - Ожидаемое значение
+ * @param {string} valueType - Тип значения (string, number, boolean, null)
+ * @returns {boolean} - Совпадает ли
  */
 function checkValueMatch(actualValue, expectedValue, valueType) {
-    // 如果没有指定类型，直接比较
+    // Если тип не указан, сравнить напрямую
     if (!valueType) {
         // eslint-disable-next-line eqeqeq
-        return actualValue == expectedValue; // 使用 == 允许类型转换
+        return actualValue == expectedValue; // Использовать == для допуска преобразования типов
     }
     
-    // 根据类型进行比较
+    // Сравнить в соответствии с типом
     switch (valueType) {
         case 'string':
             return String(actualValue) === String(expectedValue);
@@ -895,17 +895,17 @@ function checkValueMatch(actualValue, expectedValue, valueType) {
 }
 
 /**
- * 预定义的筛选器函数集合
+ * Набор предопределённых функций-фильтров
  */
 const FILTER_PRESETS = {
-    // 根据字段值查找数组元素并返回指定字段
-    // 参数: { arrayPath, matchField, matchValue, returnField }
-    // 支持数组: arrayPath, returnField 可以是数组
+    // Найти элемент массива по значению поля и вернуть указанное поле
+    // Параметры: { arrayPath, matchField, matchValue, returnField }
+    // Поддержка массивов: arrayPath, returnField могут быть массивами
     findByField: (obj, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const returnFields = Array.isArray(params.returnField) ? params.returnField : [params.returnField];
         
-        // 尝试每个 arrayPath
+        // Попробовать каждый arrayPath
         for (const arrayPath of arrayPaths) {
             const array = getValueByPath(obj, arrayPath);
             if (!Array.isArray(array)) continue;
@@ -913,7 +913,7 @@ const FILTER_PRESETS = {
             const item = array.find(el => el[params.matchField] === params.matchValue);
             if (!item) continue;
             
-            // 尝试每个 returnField
+            // Попробовать каждое returnField
             for (const returnField of returnFields) {
                 const value = getValueByPath(item, returnField);
                 if (value) return value;
@@ -922,9 +922,9 @@ const FILTER_PRESETS = {
         return '';
     },
     
-    // 根据字段值过滤数组并合并指定字段
-    // 参数: { arrayPath, matchField, matchValue, returnField, separator }
-    // 支持数组: arrayPath, matchValue, returnField 可以是数组
+    // Отфильтровать массив по значению поля и объединить указанные поля
+    // Параметры: { arrayPath, matchField, matchValue, returnField, separator }
+    // Поддержка массивов: arrayPath, matchValue, returnField могут быть массивами
     filterAndJoin: (obj, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const matchValues = Array.isArray(params.matchValue) ? params.matchValue : [params.matchValue];
@@ -944,7 +944,7 @@ const FILTER_PRESETS = {
                     const value = getValueByPath(item, returnField);
                     if (value) {
                         results.push(value);
-                        break; // 找到第一个有效字段就跳出
+                        break; // Прервать после первого найденного допустимого поля
                     }
                 }
             }
@@ -953,9 +953,9 @@ const FILTER_PRESETS = {
         return results.join(separator);
     },
     
-    // 获取数组中第一个匹配条件的元素的字段值
-    // 参数: { arrayPath, matchField, matchValues, returnField }
-    // 支持数组: arrayPath, matchValues, returnField 可以是数组
+    // Получить значение поля первого элемента массива, соответствующего условию
+    // Параметры: { arrayPath, matchField, matchValues, returnField }
+    // Поддержка массивов: arrayPath, matchValues, returnField могут быть массивами
     findFirstMatch: (obj, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const matchValues = Array.isArray(params.matchValues) ? params.matchValues : [params.matchValues];
@@ -978,9 +978,9 @@ const FILTER_PRESETS = {
         return '';
     },
     
-    // 获取数组指定索引的元素的字段值
-    // 参数: { arrayPath, index, returnField }
-    // 支持数组: arrayPath, returnField 可以是数组
+    // Получить значение поля элемента массива по указанному индексу
+    // Параметры: { arrayPath, index, returnField }
+    // Поддержка массивов: arrayPath, returnField могут быть массивами
     getByIndex: (obj, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const returnFields = Array.isArray(params.returnField) ? params.returnField : [params.returnField];
@@ -1000,9 +1000,9 @@ const FILTER_PRESETS = {
         return '';
     },
     
-    // 直接获取指定路径的值
-    // 参数: { path }
-    // 支持数组: path 可以是数组，返回第一个非空值
+    // Получить значение по указанному пути напрямую
+    // Параметры: { path }
+    // Поддержка массивов: path может быть массивом, вернуть первое непустое значение
     getPath: (obj, params) => {
         const paths = Array.isArray(params.path) ? params.path : [params.path];
         
@@ -1015,12 +1015,12 @@ const FILTER_PRESETS = {
 };
 
 /**
- * 预定义的设置器函数集合
+ * Набор предопределённых функций-установщиков
  */
 const SETTER_PRESETS = {
-    // 根据字段值查找数组元素并设置指定字段
-    // 参数: { arrayPath, matchField, matchValue, setField }
-    // 支持数组: arrayPath, setField 可以是数组
+    // Найти элемент массива по значению поля и установить указанное поле
+    // Параметры: { arrayPath, matchField, matchValue, setField }
+    // Поддержка массивов: arrayPath, setField могут быть массивами
     setByField: (obj, value, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const setFields = Array.isArray(params.setField) ? params.setField : [params.setField];
@@ -1032,19 +1032,19 @@ const SETTER_PRESETS = {
             const item = array.find(el => el[params.matchField] === params.matchValue);
             if (!item) continue;
             
-            // 设置所有指定的字段
+            // Установить все указанные поля
             for (const setField of setFields) {
                 setValueByPath(item, setField, value);
             }
             
-            // 找到第一个匹配的就返回
+            // Прервать после первого совпадения
             return;
         }
     },
     
-    // 设置数组指定索引的元素的字段值
-    // 参数: { arrayPath, index, setField }
-    // 支持数组: arrayPath, setField 可以是数组
+    // Установить значение поля элемента массива по указанному индексу
+    // Параметры: { arrayPath, index, setField }
+    // Поддержка массивов: arrayPath, setField могут быть массивами
     setByIndex: (obj, value, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const setFields = Array.isArray(params.setField) ? params.setField : [params.setField];
@@ -1056,7 +1056,7 @@ const SETTER_PRESETS = {
             const item = array[params.index];
             if (!item) continue;
             
-            // 设置所有指定的字段
+            // Установить все указанные поля
             for (const setField of setFields) {
                 setValueByPath(item, setField, value);
             }
@@ -1065,9 +1065,9 @@ const SETTER_PRESETS = {
         }
     },
     
-    // 直接设置指定路径的值
-    // 参数: { path }
-    // 支持数组: path 可以是数组，会设置所有路径
+    // Установить значение по указанному пути напрямую
+    // Параметры: { path }
+    // Поддержка массивов: path может быть массивом, будут установлены все пути
     setPath: (obj, value, params) => {
         const paths = Array.isArray(params.path) ? params.path : [params.path];
         
@@ -1078,7 +1078,7 @@ const SETTER_PRESETS = {
 };
 
 /**
- * 辅助函数：根据路径获取值
+ * Вспомогательная функция: получить значение по пути
  */
 function getValueByPath(obj, path) {
     if (!path) return obj;
@@ -1087,7 +1087,7 @@ function getValueByPath(obj, path) {
 }
 
 /**
- * 辅助函数：根据路径设置值
+ * Вспомогательная функция: установить значение по пути
  */
 function setValueByPath(obj, path, value) {
     if (!path) return;
@@ -1104,12 +1104,12 @@ function setValueByPath(obj, path, value) {
 }
 
 /**
- * 应用自定义的 prompt 筛选逻辑
- * @param {any} value - 当前值（如果有 promptFilter，这里是完整的 obj）
- * @param {object|string} filterConfig - 筛选配置对象或预设名称
- * @param {object} rootObj - 根对象（完整的请求体）
- * @param {any} currentTarget - 当前目标对象
- * @returns {any} - 筛选后的值
+ * Применить пользовательскую логику фильтрации prompt
+ * @param {any} value - Текущее значение (если есть promptFilter, здесь полный obj)
+ * @param {object|string} filterConfig - Объект конфигурации фильтра или имя пресета
+ * @param {object} rootObj - Корневой объект (полное тело запроса)
+ * @param {any} currentTarget - Текущий целевой объект
+ * @returns {any} - Отфильтрованное значение
  */
 function applyPromptFilter(value, filterConfig, rootObj, currentTarget) {
     if (!filterConfig) {
@@ -1117,7 +1117,7 @@ function applyPromptFilter(value, filterConfig, rootObj, currentTarget) {
     }
     
     try {
-        // 如果是字符串，尝试解析为 JSON
+        // Если это строка, попробовать разобрать её как JSON
         if (typeof filterConfig === 'string') {
             try {
                 filterConfig = JSON.parse(filterConfig);
@@ -1127,7 +1127,7 @@ function applyPromptFilter(value, filterConfig, rootObj, currentTarget) {
             }
         }
         
-        // 如果是对象配置
+        // Если это объект конфигурации
         if (typeof filterConfig === 'object' && filterConfig.preset) {
             const preset = FILTER_PRESETS[filterConfig.preset];
             if (!preset) {
@@ -1157,7 +1157,7 @@ function applyPromptFilter(value, filterConfig, rootObj, currentTarget) {
 }
 
 function getByPath(obj, path, isJsonString, promptFilter) {
-    // 如果配置了 promptFilter，完全使用自定义逻辑，忽略 path
+    // Если настроен promptFilter, полностью использовать пользовательскую логику, игнорируя path
     if (promptFilter) {
         console.log('[MCP Bridge] Using promptFilter, ignoring path');
         return applyPromptFilter(obj, promptFilter, obj, obj);
@@ -1166,7 +1166,7 @@ function getByPath(obj, path, isJsonString, promptFilter) {
     const parts = path.split('.');
     
     if (isJsonString && parts.length >= 2) {
-        // 对于 JSON 字符串,需要特殊处理
+        // Для JSON-строки требуется особая обработка
         const innerKey = parts.pop();
         const jsonFieldKey = parts.pop();
         
@@ -1190,7 +1190,7 @@ function getByPath(obj, path, isJsonString, promptFilter) {
         }
         return undefined;
     } else {
-        // 普通路径
+        // Обычный путь
         return parts.reduce((acc, part) => acc && acc[part], obj);
     }
 }
@@ -1199,23 +1199,23 @@ function setByPath(obj, path, value, siteConfig) {
     const {isJsonString, promptFilter, promptSetFilter} = siteConfig;
     const parts = path.split('.');
     
-    // 如果配置了 promptSetFilter，使用自定义逻辑设置值
+    // Если настроен promptSetFilter, использовать пользовательскую логику установки значения
     if (promptSetFilter) {
         console.log('[MCP Bridge] Using promptSetFilter for setting value');
         try {
-            // 如果是字符串，尝试解析为 JSON
+            // Если это строка, попробовать разобрать её как JSON
             let setConfig = promptSetFilter;
             if (typeof setConfig === 'string') {
                 try {
                     setConfig = JSON.parse(setConfig);
                 } catch (e) {
                     console.error('[MCP Bridge] Failed to parse promptSetFilter as JSON:', e);
-                    // 继续使用默认逻辑
+                    // Продолжить с логикой по умолчанию
                     setConfig = null;
                 }
             }
             
-            // 如果是对象配置
+            // Если это объект конфигурации
             if (setConfig && typeof setConfig === 'object' && setConfig.preset) {
                 const preset = SETTER_PRESETS[setConfig.preset];
                 if (preset) {
@@ -1229,20 +1229,20 @@ function setByPath(obj, path, value, siteConfig) {
         } catch (error) {
             console.error('[MCP Bridge] Failed to apply promptSetFilter:', error);
             console.error('[MCP Bridge] Filter config:', promptSetFilter);
-            // 失败则继续使用默认逻辑
+            // При неудаче продолжить с логикой по умолчанию
         }
     }
     
     if (isJsonString && parts.length >= 2) {
-        // 对于 JSON 字符串,需要特殊处理
-        // 例如: "messages.0.content.text" 
+        // Для JSON-строки требуется особая обработка
+        // Пример: "messages.0.content.text" 
         // - parts = ["messages", "0", "content", "text"]
-        // - 我们需要找到 "content" 字段,解析它,修改内部的 "text",再序列化回去
+        // - Нужно найти поле "content", разобрать его, изменить внутреннее "text" и сериализовать обратно
         
         const innerKey = parts.pop(); // "text"
         const jsonFieldKey = parts.pop(); // "content"
         
-        // 导航到 JSON 字符串所在的对象
+        // Перейти к объекту, содержащему JSON-строку
         let target = obj;
         for (const part of parts) {
             if (target === undefined || target === null) return;
@@ -1266,7 +1266,7 @@ function setByPath(obj, path, value, siteConfig) {
             }
         }
     } else {
-        // 普通路径处理
+        // Обычная обработка пути
         const lastPart = parts.pop();
         let target = obj;
         for (const part of parts) {
@@ -1280,39 +1280,39 @@ function setByPath(obj, path, value, siteConfig) {
 }
 
 /**
- * 刷新 System Prompt 并注入到当前页面
- * @param {number} tabId - 标签页ID
- * @returns {Promise<Object>} 操作结果
+ * Обновить System Prompt и внедрить его в текущую страницу
+ * @param {number} tabId - ID вкладки
+ * @returns {Promise<Object>} Результат операции
  */
 async function handleRefreshSystemPrompt(tabId) {
     try {
-        await updateUIPanel(tabId, 'EXECUTING', '正在获取最新工具列表...');
+        await updateUIPanel(tabId, 'EXECUTING', 'Получение актуального списка инструментов...');
 
-        // 获取服务列表
+        // Получить список сервисов
         const services = await apiClient.getServices();
         
-        // 构建完整的初始 Prompt
+        // Построить полный начальный Prompt
         const systemPrompt = promptBuilder.buildInitialPrompt(services);
         
-        await updateUIPanel(tabId, 'SUCCESS', 'System Prompt 已刷新，正在注入...');
+        await updateUIPanel(tabId, 'SUCCESS', 'System Prompt обновлён, внедрение...');
 
-        // 获取当前站点配置
+        // Получить конфигурацию текущего сайта
         const { api_list, auto_submit_prompt } = await chrome.storage.local.get(['api_list', 'auto_submit_prompt']);
         const currentHostname = await getCurrentHostname(tabId);
         const siteConfig = api_list?.find(site => site.hostname === currentHostname);
         
         if (!siteConfig || !siteConfig.input) {
-            throw new Error(`当前网站 (${currentHostname}) 未配置输入选项`);
+            throw new Error(`Для текущего сайта (${currentHostname}) не настроены параметры ввода`);
         }
 
-        // 创建输入配置，根据用户设置决定是否自动发送
+        // Создать конфигурацию ввода, в зависимости от пользовательской настройки решить, отправлять ли автоматически
         const inputConfig = {
             ...siteConfig.input,
-            // 如果用户关闭了自动发送，则不触发提交按键
+            // Если пользователь отключил автоотправку, не нажимать клавишу отправки
             submitKey: auto_submit_prompt ? siteConfig.input.submitKey : null
         };
 
-        // 发送注入消息
+        // Отправить сообщение о внедрении
         await chrome.tabs.sendMessage(tabId, {
             type: 'INJECT_TEXT_AND_SUBMIT',
             payload: {
@@ -1321,16 +1321,16 @@ async function handleRefreshSystemPrompt(tabId) {
             }
         });
 
-        await updateUIPanel(tabId, 'SUCCESS', `System Prompt 已${auto_submit_prompt ? '注入并发送' : '注入到输入框'}`);
+        await updateUIPanel(tabId, 'SUCCESS', `System Prompt ${auto_submit_prompt ? 'внедрён и отправлен' : 'внедрён в поле ввода'}`);
         
-        // 2秒后清除面板
+        // Через 2 секунды очистить панель
         setTimeout(() => clearTabState(tabId), 2000);
 
         return { success: true };
     } catch (error) {
         console.error('[MCP Bridge] Failed to refresh system prompt:', error);
-        await updateUIPanel(tabId, 'ERROR', '刷新 Prompt 失败', {
-            title: '错误详情',
+        await updateUIPanel(tabId, 'ERROR', 'Ошибка обновления Prompt', {
+            title: 'Подробности ошибки',
             content: error.message
         });
         return { success: false, error: error.message };
@@ -1338,31 +1338,31 @@ async function handleRefreshSystemPrompt(tabId) {
 }
 
 /**
- * 处理用户手动粘贴的内容(兜底方案)
+ * Обработать содержимое, вставленное пользователем вручную (резервный вариант)
  */
 async function handleManualToolParse(tabId, content) {
     try {
-        await updateUIPanel(tabId, 'EXECUTING', '正在解析手动输入的内容...');
+        await updateUIPanel(tabId, 'EXECUTING', 'Разбор введённого вручную содержимого...');
 
-        // 使用相同的正则匹配工具调用
+        // Использовать то же регулярное выражение для поиска вызова инструмента
         const toolCallMatch = content.match(/<?\s*tool_code\s*>?([\s\S]*?)<\s*\/\s*tool_code\s*>/);
 
         if (!toolCallMatch) {
-            await updateUIPanel(tabId, 'ERROR', '未在内容中找到工具调用标签');
+            await updateUIPanel(tabId, 'ERROR', 'В содержимом не найден тег вызова инструмента');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             return;
         }
 
         const toolCallJson = parseJsonSafely(toolCallMatch[1]);
         if (!toolCallJson || !toolCallJson.tool_name) {
-            await updateUIPanel(tabId, 'ERROR', '工具调用格式不正确');
+            await updateUIPanel(tabId, 'ERROR', 'Неверный формат вызова инструмента');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             return;
         }
 
         console.log('[MCP Bridge] Manual tool call parsed:', toolCallJson);
 
-        // 执行工具调用
+        // Выполнить вызов инструмента
         const { tool_name, arguments: args } = toolCallJson;
         if (tool_name === 'list_tools_in_service') {
             await handleListTools(tabId, args.service_name);
@@ -1371,89 +1371,89 @@ async function handleManualToolParse(tabId, content) {
         }
     } catch (error) {
         console.error('[MCP Bridge] Failed to parse manual content:', error);
-        await updateUIPanel(tabId, 'ERROR', '解析失败: ' + error.message);
+        await updateUIPanel(tabId, 'ERROR', 'Ошибка разбора: ' + error.message);
         setTimeout(() => destroyUIPanel(tabId), 3000);
     }
 }
 
 /**
- * 从最后一条 UI 消息重新检测工具调用(断点续传)
+ * Повторно определить вызов инструмента из последнего UI-сообщения (возобновление с точки останова)
  */
 async function handleRedetectFromUI(tabId) {
-    console.log('[MCP Bridge] handleRedetectFromUI called with tabId:', tabId);
+    console.log('[MCP Bridge] handleRedetectFromUI вызван с tabId:', tabId);
     
     try {
-        await updateUIPanel(tabId, 'EXECUTING', '正在从 UI 重新检测工具调用...');
+        await updateUIPanel(tabId, 'EXECUTING', 'Повторное определение вызова инструмента из UI...');
 
-        // 获取当前 Tab 的 URL
+        // Получить URL текущей вкладки
         const tab = await chrome.tabs.get(tabId);
         const currentUrl = new URL(tab.url).hostname;
         
         console.log('[MCP Bridge] Current URL hostname:', currentUrl);
 
-        // 获取 API 配置列表
+        // Получить список конфигураций API
         const { api_list = [] } = await chrome.storage.local.get('api_list');
         
         console.log('[MCP Bridge] api_list:', api_list);
         
-        // 使用 hostname 字段匹配站点配置
+        // Использовать поле hostname для сопоставления с конфигурацией сайта
         const siteConfig = api_list.find(item => item.hostname === currentUrl);
         
         console.log('[MCP Bridge] Site config:', siteConfig);
 
         if (!siteConfig) {
             console.warn('[MCP Bridge] No site config found for hostname:', currentUrl);
-            await updateUIPanel(tabId, 'ERROR', '无法获取站点配置');
+            await updateUIPanel(tabId, 'ERROR', 'Не удалось получить конфигурацию сайта');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             return;
         }
 
-        // 检查是否配置了 UI 解析
+        // Проверить, настроен ли UI-разбор
         if (!siteConfig.uiParsing || !siteConfig.uiParsing.enabled) {
-            await updateUIPanel(tabId, 'ERROR', '当前站点未配置 UI 解析功能');
+            await updateUIPanel(tabId, 'ERROR', 'Для текущего сайта не настроена функция UI-разбора');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             return;
         }
 
-        // 从页面 DOM 解析最后一条消息
+        // Разобрать последнее сообщение из DOM страницы
         const response = await chrome.tabs.sendMessage(tabId, {
             type: 'PARSE_UI_CONTENT',
             payload: { uiConfig: siteConfig.uiParsing }
         });
 
         if (!response?.success || !response.content) {
-            await updateUIPanel(tabId, 'ERROR', 'UI 解析失败,未获取到内容');
+            await updateUIPanel(tabId, 'ERROR', 'UI-разбор не удался, содержимое не получено');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             return;
         }
 
         console.log('[MCP Bridge] Redetected UI content length:', response.content.length);
 
-        // 使用解析到的内容检测工具调用
+        // Использовать разобранное содержимое для обнаружения вызова инструмента
         const toolCallMatch = response.content.match(/<?\s*tool_code\s*>?([\s\S]*?)<\s*\/\s*tool_code\s*>/);
 
         if (!toolCallMatch) {
-            await updateUIPanel(tabId, 'SUCCESS', '未检测到工具调用');
+            await updateUIPanel(tabId, 'SUCCESS', 'Вызовов инструментов не обнаружено');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             return;
         }
 
         const toolCallJson = parseJsonSafely(toolCallMatch[1]);
         if (!toolCallJson || !toolCallJson.tool_name) {
-            // 把错误信息发送给模型
+            // Отправить сообщение об ошибке модели
             try {
                 JSON.parse(toolCallMatch[1])
             } catch (e) {
-                await injectToolResult(tabId, `**工具调用失败！** \n\n错误信息:\n\n${e.message}`)
+                await injectToolResult(tabId, `**Ошибка вызова инструмента!** \n\nСообщение об ошибке:\n\n${e.message}`)
             }
-            await updateUIPanel(tabId, 'ERROR', '检测到工具调用,但格式不正确');
+            await updateUIPanel(tabId, 'ERROR', 'Обнаружен вызов инструмента, но формат неверен');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             return;
         }
 
         console.log('[MCP Bridge] Redetected tool call:', toolCallJson);
 
-        // 执行工具调用
+        // Выполнить вызов инструмента
         const { tool_name, arguments: args } = toolCallJson;
         if (tool_name === 'list_tools_in_service') {
             await handleListTools(tabId, args.service_name);
@@ -1462,7 +1462,7 @@ async function handleRedetectFromUI(tabId) {
         }
     } catch (error) {
         console.error('[MCP Bridge] Failed to redetect from UI:', error);
-        await updateUIPanel(tabId, 'ERROR', '重新检测失败: ' + error.message);
+        await updateUIPanel(tabId, 'ERROR', 'Повторное обнаружение не удалось: ' + error.message);
         setTimeout(() => destroyUIPanel(tabId), 3000);
     }
 }

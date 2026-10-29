@@ -1,11 +1,11 @@
 /**
- * options.js (Upgraded for separate Service Manager view)
+ * options.js (Обновлено для отдельного представления «Менеджер сервисов»)
  *
- * 职责: 控制设置页面的所有交互逻辑。
+ * Назначение: управляет всей логикой взаимодействия на странице настроек.
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // --- DOM Elements ---
+    // --- DOM-элементы ---
     const elements = {
         mainNav: document.querySelector('.sidebar-nav'),
         views: document.querySelectorAll('.view'),
@@ -18,13 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
         version: document.getElementById('version')
     };
 
-    // --- State ---
+    // --- Состояние ---
     let currentConfig = {};
     let isSaving = false;
-    let bridgePort = 3849; // 默认端口
+    let bridgePort = 3849; // Порт по умолчанию
 
     /**
-     * 获取桥接服务端口
+     * Получить порт bridge-сервиса
      */
     async function getBridgePort() {
         const { bridge_port } = await chrome.storage.local.get('bridge_port');
@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * 获取基础 URL
+     * Получить базовый URL
      */
     async function getBaseUrl() {
         await getBridgePort();
@@ -45,16 +45,16 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.version.textContent = `MCP Bridge v${chrome.runtime.getManifest().version}`;
             console.log('MCP Bridge: Version set');
             
-            // 加载端口配置
+            // Загрузить конфигурацию порта
             await loadPortConfig();
             
             await renderSiteList();
             console.log('MCP Bridge: Site list rendered');
-            // 首次加载时，也加载一次配置，以便缓存
+            // При первой загрузке также загрузить конфигурацию, чтобы её закэшировать
             const configLoaded = await loadAndCacheConfig();
             bindEvents();
         } catch (error) {
-            // 即使初始化过程中出现错误，也要绑定事件，确保UI可以交互
+            // Даже если при инициализации произошла ошибка, привязать события, чтобы UI оставался интерактивным
             try {
                 bindEvents();
             } catch (bindError) {
@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * 加载端口配置
+     * Загрузить конфигурацию порта
      */
     async function loadPortConfig() {
         await getBridgePort();
@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * 保存端口配置
+     * Сохранить конфигурацию порта
      */
     async function savePortConfig() {
         const portInput = document.getElementById('bridgePort');
@@ -85,29 +85,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const newPort = parseInt(portInput.value);
         
         if (!newPort || newPort < 1 || newPort > 65535) {
-            toast('请输入有效的端口号（1-65535）', 'error');
+            toast('Введите корректный номер порта (1–65535)', 'error');
             return;
         }
         
         try {
             saveButton.disabled = true;
-            saveButton.textContent = '保存中...';
+            saveButton.textContent = 'Сохранение...';
             
             await chrome.storage.local.set({ bridge_port: newPort });
             bridgePort = newPort;
             
-            toast(`端口已保存为 ${newPort}，请确保服务运行在此端口`, 'success');
+            toast(`Порт сохранён как ${newPort}. Убедитесь, что сервис запущен на этом порту`, 'success');
         } catch (error) {
-            toast('保存端口失败', 'error');
+            toast('Не удалось сохранить порт', 'error');
         } finally {
             saveButton.disabled = false;
-            saveButton.textContent = '保存';
+            saveButton.textContent = 'Сохранить';
         }
     }
 
     async function renderSiteList() {
         try {
-            // 添加超时机制
+            // Добавить механизм таймаута
             const storageData = await Promise.race([
                 chrome.storage.local.get(['api_list', 'always_inject', 'disable_first_inject', 'conflict_disabled_sites', 'conflict_extension_cache']),
                 new Promise((_, reject) => 
@@ -127,12 +127,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const firstInjectEnabled = !disable_first_inject[site.hostname];
                 const isConflictDisabled = conflict_disabled_sites.includes(site.hostname);
 
-                // 查找冲突的扩展名称
+                // Найти имя конфликтующего расширения
                 let conflictExtName = '';
                 if (conflict_extension_cache?.data) {
                     for (const ext of conflict_extension_cache.data) {
                         if (ext.affected_sites?.includes(site.hostname)) {
-                            conflictExtName = ext.name || ext.extension_id || '未知扩展';
+                            conflictExtName = ext.name || ext.extension_id || 'Неизвестное расширение';
                             break;
                         }
                     }
@@ -144,13 +144,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             const localList = await localResp.json();
                             for (const ext of localList) {
                                 if (ext.affected_sites?.includes(site.hostname)) {
-                                    conflictExtName = ext.name || ext.extension_id || '未知扩展';
+                                    conflictExtName = ext.name || ext.extension_id || 'Неизвестное расширение';
                                     break;
                                 }
                             }
                         }
-                    } catch (e) { /* ignore */ }
-                    if (!conflictExtName) conflictExtName = '未知扩展';
+                    } catch (e) { /* игнорировать */ }
+                    if (!conflictExtName) conflictExtName = 'Неизвестное расширение';
                 }
 
                 siteItem.innerHTML = `
@@ -164,8 +164,8 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="site-card-controls">
         <div class="toggle-row">
             <div class="toggle-info">
-                <span class="toggle-label">首次自动注入</span>
-                <span class="toggle-hint">新对话时注入 System Prompt</span>
+                <span class="toggle-label">Первое авто-внедрение</span>
+                <span class="toggle-hint">Внедрять System Prompt при новом диалоге</span>
             </div>
             <label class="switch">
                 <input type="checkbox" data-hostname="${site.hostname}" class="disable-first-inject-toggle" ${firstInjectEnabled ? 'checked' : ''}>
@@ -174,8 +174,8 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="toggle-row">
             <div class="toggle-info">
-                <span class="toggle-label">每次注入</span>
-                <span class="toggle-hint">每条消息都注入工具列表</span>
+                <span class="toggle-label">Внедрять каждый раз</span>
+                <span class="toggle-hint">Вставлять список инструментов в каждое сообщение</span>
             </div>
             <label class="switch">
                 <input type="checkbox" data-hostname="${site.hostname}" class="always-inject-toggle" ${always_inject[site.hostname] ? 'checked' : ''}>
@@ -186,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ${isConflictDisabled ? `
     <div class="conflict-banner">
         <span class="conflict-banner-icon">⚠️</span>
-        <span>因与「${conflictExtName}」扩展冲突，已自动关闭首次注入</span>
+        <span>Из-за конфликта с расширением «${conflictExtName}» первое внедрение автоматически отключено</span>
     </div>
     ` : ''}
 `;
@@ -194,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error("MCP Bridge: Failed to render site list.", error);
-            elements.siteList.innerHTML = '<li>加载站点列表失败。</li>';
+            elements.siteList.innerHTML = '<li>Не удалось загрузить список сайтов.</li>';
         }
     }
 
@@ -203,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const services = currentConfig.mcpServers || {};
 
         if (Object.keys(services).length === 0) {
-            elements.serviceToggleList.innerHTML = '<li class="service-card">配置文件中暂无服务。</li>';
+            elements.serviceToggleList.innerHTML = '<li class="service-card">В файле конфигурации пока нет сервисов.</li>';
             return;
         }
 
@@ -215,16 +215,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="service-card-header">
                     <div class="service-card-info">
                         <span class="service-card-name">${name}</span>
-                        <span class="service-card-desc">${config.description || '无描述'}</span>
+                        <span class="service-card-desc">${config.description || 'Нет описания'}</span>
                     </div>
                 </div>
                 <div class="service-card-actions">
                     <div class="service-status" data-service-name="${name}">
                         <span class="status-dot checking"></span>
-                        <span class="status-text">检测中...</span>
+                        <span class="status-text">Проверка...</span>
                     </div>
-                    <button class="btn btn-sm btn-secondary restart-button" data-service-name="${name}">重启</button>
-                    <button class="btn btn-sm btn-danger delete-button" data-service-name="${name}">删除</button>
+                    <button class="btn btn-sm btn-secondary restart-button" data-service-name="${name}">Перезапустить</button>
+                    <button class="btn btn-sm btn-danger delete-button" data-service-name="${name}">Удалить</button>
                     <label class="switch">
                         <input type="checkbox" data-service-name="${name}" class="service-toggle" ${isEnabled ? 'checked' : ''}>
                         <span class="slider"></span>
@@ -233,13 +233,13 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             elements.serviceToggleList.appendChild(item);
             
-            // 检查服务状态
+            // Проверить статус сервиса
             checkServiceStatus(name);
         }
         
-        // 绑定重启按钮事件
+        // Привязать события кнопок перезапуска
         bindRestartButtons();
-        // 绑定删除按钮事件
+        // Привязать события кнопок удаления
         bindDeleteButtons();
     }
     
@@ -254,21 +254,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const button = event.currentTarget;
         const serviceName = button.dataset.serviceName;
         
-        // 确认删除
-        if (!confirm(`确定要删除服务 "${serviceName}" 吗？此操作不可恢复。`)) {
+        // Подтвердить удаление
+        if (!confirm(`Вы уверены, что хотите удалить сервис "${serviceName}"? Это действие необратимо.`)) {
             return;
         }
         
         const originalText = button.innerHTML;
         button.disabled = true;
-        button.innerHTML = '⏳ 删除中...';
+        button.innerHTML = '⏳ Удаление...';
         
         try {
-            // 从配置中删除
+            // Удалить из конфигурации
             if (currentConfig.mcpServers && currentConfig.mcpServers[serviceName]) {
                 delete currentConfig.mcpServers[serviceName];
                 
-                // 保存配置
+                // Сохранить конфигурацию
                 const baseUrl = await getBaseUrl();
                 const saveResponse = await fetch(`${baseUrl}/config`, {
                     method: 'POST',
@@ -280,21 +280,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (!saveResponse.ok) {
                     const errorData = await saveResponse.json();
-                    throw new Error(errorData.detail || '保存配置失败');
+                    throw new Error(errorData.detail || 'Не удалось сохранить конфигурацию');
                 }
                 
-                toast(`服务 "${serviceName}" 已删除`, 'success');
+                toast(`Сервис "${serviceName}" удалён`, 'success');
                 
-                // 重新渲染服务列表
+                // Перерисовать список сервисов
                 renderServiceToggles();
             }
         } catch (error) {
-            console.error('删除服务失败:', error);
-            toast(`删除失败: ${error.message}`, 'error');
+            console.error('Не удалось удалить сервис:', error);
+            toast(`Ошибка удаления: ${error.message}`, 'error');
             button.disabled = false;
             button.innerHTML = originalText;
             
-            // 恢复配置（如果已删除）
+            // Восстановить конфигурацию (если она была удалена)
             await loadAndCacheConfig(true);
         }
     }
@@ -307,34 +307,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = statusEl.querySelector('.status-text');
         
         try {
-            // 直接调用本地 API
+            // Напрямую вызвать локальный API
             const baseUrl = await getBaseUrl();
             const response = await fetch(`${baseUrl}/tools?serverName=${encodeURIComponent(serviceName)}`);
             
             if (response.ok) {
                 const data = await response.json();
                 if (data.success && data.tools) {
-                    // 服务正常运行
+                    // Сервис работает нормально
                     indicator.className = 'status-dot running';
-                    text.textContent = '运行中';
+                    text.textContent = 'Работает';
                 } else {
-                    // 返回了但有错误
+                    // Ответ получен, но с ошибкой
                     indicator.className = 'status-dot error';
-                    text.textContent = '异常';
+                    text.textContent = 'Сбой';
                 }
             } else if (response.status === 404) {
-                // 服务未运行
+                // Сервис не запущен
                 indicator.className = 'status-dot stopped';
-                text.textContent = '已停止';
+                text.textContent = 'Остановлен';
             } else {
-                // 其他错误
+                // Прочая ошибка
                 indicator.className = 'status-dot error';
-                text.textContent = '错误';
+                text.textContent = 'Ошибка';
             }
         } catch (error) {
-            // 无法连接到服务器
+            // Не удалось подключиться к серверу
             indicator.className = 'status-dot stopped';
-            text.textContent = '未运行';
+            text.textContent = 'Не запущен';
         }
     }
     
@@ -351,10 +351,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const originalText = button.innerHTML;
         
         button.disabled = true;
-        button.innerHTML = '⏳ 重启中...';
+        button.innerHTML = '⏳ Перезапуск...';
         
         try {
-            // 直接调用本地 API 重启服务
+            // Напрямую вызвать локальный API для перезапуска сервиса
             const baseUrl = await getBaseUrl();
             const response = await fetch(`${baseUrl}/restart-server`, {
                 method: 'POST',
@@ -367,15 +367,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             
             if (response.ok && data.success) {
-                toast(`服务 "${serviceName}" 重启成功！`, 'success');
-                // 延迟一下再检查状态，让服务有时间启动
+                toast(`Сервис "${serviceName}" успешно перезапущен!`, 'success');
+                // Немного подождать перед проверкой статуса, чтобы сервис успел запуститься
                 setTimeout(() => checkServiceStatus(serviceName), 1000);
             } else {
-                toast(`重启失败: ${data.message || data.detail || '未知错误'}`, 'error');
+                toast(`Ошибка перезапуска: ${data.message || data.detail || 'Неизвестная ошибка'}`, 'error');
             }
         } catch (error) {
-            console.error('重启服务失败:', error);
-            toast(`重启失败: ${error.message}`, 'error');
+            console.error('Не удалось перезапустить сервис:', error);
+            toast(`Ошибка перезапуска: ${error.message}`, 'error');
         } finally {
             button.disabled = false;
             button.innerHTML = originalText;
@@ -385,11 +385,11 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadAndCacheConfig(forceReload = false) {
         // console.log(forceReload, currentConfig)
         if (!forceReload && Object.keys(currentConfig).length > 0) {
-            return true; // 返回true表示成功
+            return true; // возвращаем true — успех
         }
 
         try {
-            // 添加超时机制，避免无限等待
+            // Добавить механизм таймаута, чтобы избежать бесконечного ожидания
             const message = { type: 'GET_CONFIG', payload: {} };
             const config = await chrome.runtime.sendMessage(message);
             if (config && config.error) {
@@ -397,13 +397,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(config.error);
             }
             currentConfig = config || {};
-            return true; // 成功加载配置
+            return true; // конфигурация успешно загружена
         } catch (error) {
             console.error('MCP Bridge: Failed to load config', error);
             currentConfig = {};
-            // 显示错误信息，但不中断流程
-            toast(`加载配置失败: ${error.message}`, 'error');
-            return false; // 返回false表示加载失败
+            // Показать сообщение об ошибке, но не прерывать процесс
+            toast(`Не удалось загрузить конфигурацию: ${error.message}`, 'error');
+            return false; // возвращаем false — загрузка не удалась
         }
     }
 
@@ -415,16 +415,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function populateServiceConfigView() {
-        elements.configEditor.value = '正在从本地服务加载配置...';
+        elements.configEditor.value = 'Загрузка конфигурации из локального сервиса...';
         elements.configEditor.disabled = true;
         elements.saveConfigButton.disabled = true;
 
-        const success = await loadAndCacheConfig(true); // 强制重新加载
+        const success = await loadAndCacheConfig(true); // принудительно перезагрузить
         if (success) {
             elements.configEditor.value = JSON.stringify(currentConfig, null, 2);
             elements.configEditor.disabled = false;
         } else {
-            elements.configEditor.value = `加载配置失败。\n\n请确保 MCP Bridge 本地服务正在运行。`;
+            elements.configEditor.value = `Не удалось загрузить конфигурацию.\n\nУбедитесь, что локальный сервис MCP Bridge запущен.`;
         }
     }
 
@@ -435,7 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('MCP Bridge: MainNav element not found');
         }
         
-        // 端口保存按钮
+        // Кнопка сохранения порта
         const savePortButton = document.getElementById('savePortButton');
         if (savePortButton) {
             savePortButton.addEventListener('click', savePortConfig);
@@ -474,21 +474,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 修复：将 handleNavClick 函数标记为 async
+    // Исправление: пометить функцию handleNavClick как async
     async function handleNavClick(event) {
         const navItem = event.target.closest('.nav-item');
 
-        // 如果没有找到导航项，直接返回
+        // Если элемент навигации не найден — сразу выйти
         if (!navItem) {
             return;
         }
         
-        // 如果点击的是已经激活的项，也直接返回
+        // Если кликнули по уже активному элементу — тоже выйти
         if (navItem.classList.contains('active')) {
             return;
         }
 
-        // 安全地移除当前活动的导航项的active类
+        // Безопасно снять класс active с текущего активного элемента навигации
         const activeNavItem = document.querySelector('.sidebar-nav .nav-item.active');
         if (activeNavItem) {
             activeNavItem.classList.remove('active');
@@ -501,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (targetView) {
             targetView.classList.add('active');
 
-            // 根据激活的视图执行特定逻辑
+            // Выполнить специфичную логику в зависимости от активированного представления
             if (targetViewId === 'service-manager-view') {
                 await populateServiceManagerView();
             } else if (targetViewId === 'service-config-view') {
@@ -518,9 +518,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const { always_inject = {} } = await chrome.storage.local.get('always_inject');
                 always_inject[hostname] = isEnabled;
                 await chrome.storage.local.set({ always_inject });
-                toast(`已为 ${hostname} ${isEnabled ? '开启' : '关闭'} 每次注入`);
+                toast(`Для ${hostname} ${isEnabled ? 'включено' : 'выключено'} внедрение каждый раз`);
             } catch (error) {
-                toast('保存设置失败', 'error');
+                toast('Не удалось сохранить настройку', 'error');
             }
         } else if (event.target.classList.contains('disable-first-inject-toggle')) {
             const hostname = event.target.dataset.hostname;
@@ -532,16 +532,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 disable_first_inject[hostname] = !checked;
 
-                // 用户手动重新开启，从冲突禁用列表中移除
+                // Пользователь вручную включил обратно — удалить из списка отключённых из-за конфликта
                 if (checked && conflict_disabled_sites.includes(hostname)) {
                     const idx = conflict_disabled_sites.indexOf(hostname);
                     conflict_disabled_sites.splice(idx, 1);
                 }
 
                 await chrome.storage.local.set({ disable_first_inject, conflict_disabled_sites });
-                toast(`已为 ${hostname} ${checked ? '开启' : '关闭'} 首次自动注入`);
+                toast(`Для ${hostname} ${checked ? 'включено' : 'выключено'} первое авто-внедрение`);
             } catch (error) {
-                toast('保存设置失败', 'error');
+                toast('Не удалось сохранить настройку', 'error');
             }
         }
     }
@@ -563,10 +563,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * 合并服务配置
-     * @param {Object} target - 目标配置对象
-     * @param {Object} source - 源配置对象
-     * @param {boolean} shouldReplace - 是否替换已存在的服务
+     * Объединить конфигурации сервисов
+     * @param {Object} target - Целевой объект конфигурации
+     * @param {Object} source - Исходный объект конфигурации
+     * @param {boolean} shouldReplace - Заменять ли уже существующие сервисы
      * @returns {Object} - {added: [], skipped: [], replaced: []}
      */
     function mergeServices(target, source, shouldReplace) {
@@ -576,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         for (const [name, config] of Object.entries(source)) {
             if (target[name]) {
-                // 服务已存在
+                // Сервис уже существует
                 if (shouldReplace) {
                     target[name] = config;
                     replaced.push(name);
@@ -584,7 +584,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     skipped.push(name);
                 }
             } else {
-                // 新服务
+                // Новый сервис
                 target[name] = config;
                 added.push(name);
             }
@@ -594,24 +594,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * 显示合并结果
+     * Показать результат объединения
      */
     function showMergeResult(added, skipped, replaced) {
         const messages = [];
         if (added.length > 0) {
-            messages.push(`✅ 新增 ${added.length} 个服务`);
+            messages.push(`✅ Добавлено сервисов: ${added.length}`);
         }
         if (replaced.length > 0) {
-            messages.push(`🔄 替换 ${replaced.length} 个服务`);
+            messages.push(`🔄 Заменено сервисов: ${replaced.length}`);
         }
         if (skipped.length > 0) {
-            messages.push(`⏭️ 跳过 ${skipped.length} 个已存在的服务`);
+            messages.push(`⏭️ Пропущено уже существующих сервисов: ${skipped.length}`);
         }
 
         if (messages.length > 0) {
             toast(messages.join(' | '), 'success');
         } else {
-            toast('配置已更新', 'success');
+            toast('Конфигурация обновлена', 'success');
         }
     }
 
@@ -625,14 +625,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentConfig.mcpServers && currentConfig.mcpServers[serviceName]) {
             const originalValue = currentConfig.mcpServers[serviceName].enabled;
             
-            // 更新本地配置
+            // Обновить локальную конфигурацию
             currentConfig.mcpServers[serviceName].enabled = isEnabled;
             
             if (isEnabled) {
-                // 启用服务：保存配置并重启该服务
+                // Включить сервис: сохранить конфигурацию и перезапустить сервис
                 await handleEnableService(serviceName);
             } else {
-                // 禁用服务：直接关闭该服务
+                // Отключить сервис: сразу закрыть сервис
                 await handleDisableService(serviceName);
             }
         }
@@ -640,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     async function handleEnableService(serviceName) {
         try {
-            // 直接调用本地 API 保存配置（不重载）
+            // Напрямую вызвать локальный API для сохранения конфигурации (без перезагрузки)
             const baseUrl = await getBaseUrl();
             const saveResponse = await fetch(`${baseUrl}/config`, {
                 method: 'POST',
@@ -652,20 +652,20 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (!saveResponse.ok) {
                 const errorData = await saveResponse.json();
-                throw new Error(errorData.detail || '保存配置失败');
+                throw new Error(errorData.detail || 'Не удалось сохранить конфигурацию');
             }
             
-            // 配置保存成功，等待重载完成
-            // 注意：POST /config 接口会自动重载所有服务
+            // Конфигурация успешно сохранена, подождать завершения перезагрузки
+            // Примечание: эндпоинт POST /config автоматически перезагружает все сервисы
             await new Promise(resolve => setTimeout(resolve, 1500));
             
-            toast(`服务 "${serviceName}" 已启用`, 'success');
-            // 更新状态显示
+            toast(`Сервис "${serviceName}" включён`, 'success');
+            // Обновить отображение статуса
             checkServiceStatus(serviceName);
         } catch (error) {
-            console.error('启用服务失败:', error);
-            toast(`启用失败: ${error.message}`, 'error');
-            // 回滚开关状态
+            console.error('Не удалось включить сервис:', error);
+            toast(`Ошибка включения: ${error.message}`, 'error');
+            // Откатить состояние переключателя
             const toggle = elements.serviceToggleList.querySelector(
                 `.service-toggle[data-service-name="${serviceName}"]`
             );
@@ -676,7 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     async function handleDisableService(serviceName) {
         try {
-            // 先关闭服务
+            // Сначала закрыть сервис
             const baseUrl = await getBaseUrl();
             const shutdownResponse = await fetch(`${baseUrl}/shutdown-server`, {
                 method: 'POST',
@@ -689,20 +689,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const shutdownData = await shutdownResponse.json();
             
             if (!shutdownResponse.ok || !shutdownData.success) {
-                throw new Error(shutdownData.message || shutdownData.detail || '关闭服务失败');
+                throw new Error(shutdownData.message || shutdownData.detail || 'Не удалось закрыть сервис');
             }
             
-            // 服务关闭成功后，直接调用本地 API 保存配置
-            // 使用 GET /config 接口读取当前配置，然后更新
+            // После успешного закрытия сервиса напрямую вызвать локальный API для сохранения конфигурации
+            // Использовать эндпоинт GET /config, чтобы прочитать текущую конфигурацию, затем обновить её
             const getResponse = await fetch(`${baseUrl}/config`);
             const getResult = await getResponse.json();
             
             if (getResult.success && getResult.config) {
-                // 更新配置中的 enabled 状态
+                // Обновить состояние enabled в конфигурации
                 if (getResult.config.mcpServers && getResult.config.mcpServers[serviceName]) {
                     getResult.config.mcpServers[serviceName].enabled = false;
                     
-                    // 保存配置（这会触发重载，但服务已经关闭了，不会重新启动）
+                    // Сохранить конфигурацию (это вызовет перезагрузку, но сервис уже закрыт и не будет перезапущен)
                     const saveResponse = await fetch(`${baseUrl}/config`, {
                         method: 'POST',
                         headers: {
@@ -713,18 +713,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     if (!saveResponse.ok) {
                         const errorData = await saveResponse.json();
-                        console.warn('保存配置失败，但服务已关闭:', errorData);
+                        console.warn('Не удалось сохранить конфигурацию, но сервис уже закрыт:', errorData);
                     }
                 }
             }
             
-            toast(`服务 "${serviceName}" 已禁用`, 'success');
-            // 更新状态显示
+            toast(`Сервис "${serviceName}" отключён`, 'success');
+            // Обновить отображение статуса
             setTimeout(() => checkServiceStatus(serviceName), 500);
         } catch (error) {
-            console.error('禁用服务失败:', error);
-            toast(`禁用失败: ${error.message}`, 'error');
-            // 回滚开关状态
+            console.error('Не удалось отключить сервис:', error);
+            toast(`Ошибка отключения: ${error.message}`, 'error');
+            // Откатить состояние переключателя
             const toggle = elements.serviceToggleList.querySelector(
                 `.service-toggle[data-service-name="${serviceName}"]`
             );
@@ -743,90 +743,90 @@ document.addEventListener('DOMContentLoaded', () => {
                 const inputJson = JSON.parse(elements.configEditor.value);
                 const shouldReplace = elements.replaceExistingServices.checked;
                 
-                // 智能识别配置格式
+                // Интеллектуальное распознавание формата конфигурации
                 if (inputJson.mcpServers) {
-                    // 格式1: 完整格式 {mcpServers: {...}}
+                    // Формат 1: полный формат {mcpServers: {...}}
                     configJson = currentConfig;
                     if (!configJson.mcpServers) {
                         configJson.mcpServers = {};
                     }
                     
-                    // 根据开关决定合并策略
+                    // В зависимости от переключателя выбрать стратегию объединения
                     const { added, skipped, replaced } = mergeServices(
                         configJson.mcpServers, 
                         inputJson.mcpServers, 
                         shouldReplace
                     );
                     
-                    // 显示合并结果
+                    // Показать результат объединения
                     showMergeResult(added, skipped, replaced);
                     
                 } else {
-                    // 格式2: 单个服务配置对象 {command: ..., args: ..., description: ...}
-                    // 检查是否是有效的服务配置
+                    // Формат 2: конфигурация одного сервиса {command: ..., args: ..., description: ...}
+                    // Проверить, является ли это корректной конфигурацией сервиса
                     if (inputJson.command || inputJson.type) {
-                        // 提示用户输入服务名称
-                        const serviceName = prompt('请输入此服务的名称:');
+                        // Попросить пользователя ввести имя сервиса
+                        const serviceName = prompt('Введите имя этого сервиса:');
                         if (!serviceName) {
-                            toast('取消添加服务', 'error');
+                            toast('Добавление сервиса отменено', 'error');
                             isSaving = false;
                             return;
                         }
                         
-                        // 添加到现有配置
+                        // Добавить в существующую конфигурацию
                         configJson = currentConfig;
                         if (!configJson.mcpServers) {
                             configJson.mcpServers = {};
                         }
                         
-                        // 检查是否已存在
+                        // Проверить, существует ли уже
                         if (configJson.mcpServers[serviceName] && !shouldReplace) {
-                            toast(`服务 "${serviceName}" 已存在，已跳过`, 'warning');
+                            toast(`Сервис "${serviceName}" уже существует, пропущено`, 'warning');
                             isSaving = false;
                             return;
                         }
                         
                         configJson.mcpServers[serviceName] = inputJson;
-                        toast(`服务 "${serviceName}" 已${configJson.mcpServers[serviceName] ? '替换' : '添加'}`, 'success');
+                        toast(`Сервис "${serviceName}" ${configJson.mcpServers[serviceName] ? 'заменён' : 'добавлен'}`, 'success');
                         
                     } else {
-                        // 格式3: 可能是包含多个服务的对象
+                        // Формат 3: возможно, объект с несколькими сервисами
                         configJson = currentConfig;
                         if (!configJson.mcpServers) {
                             configJson.mcpServers = {};
                         }
                         
-                        // 根据开关决定合并策略
+                        // В зависимости от переключателя выбрать стратегию объединения
                         const { added, skipped, replaced } = mergeServices(
                             configJson.mcpServers, 
                             inputJson, 
                             shouldReplace
                         );
                         
-                        // 显示合并结果
+                        // Показать результат объединения
                         showMergeResult(added, skipped, replaced);
                     }
                 }
                 
                 currentConfig = configJson;
-                // 更新编辑器显示完整配置
+                // Обновить отображение редактора полной конфигурацией
                 elements.configEditor.value = JSON.stringify(currentConfig, null, 2);
             } else {
                 configJson = currentConfig;
             }
         } catch (error) {
-            toast('配置不是有效的 JSON 格式，请检查。', 'error');
+            toast('Конфигурация не является корректным JSON. Проверьте её.', 'error');
             isSaving = false;
             return;
         }
 
         if (isManual) {
             elements.saveConfigButton.disabled = true;
-            elements.saveConfigButton.textContent = '保存中...';
+            elements.saveConfigButton.textContent = 'Сохранение...';
         }
 
         try {
-            // 添加超时机制
+            // Добавить механизм таймаута
             const response = await Promise.race([
                 chrome.runtime.sendMessage({ type: 'UPDATE_CONFIG', payload: configJson }),
                 new Promise((_, reject) => 
@@ -836,18 +836,18 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (response && response.error) throw new Error(response.error);
 
-            toast(isManual ? '配置已保存并重载！' : `服务配置已更新并重载！`, 'success');
+            toast(isManual ? 'Конфигурация сохранена и перезагружена!' : `Конфигурация сервисов обновлена и перезагружена!`, 'success');
 
-            // 如果是在服务管理页面操作，需要重新渲染开关
+            // Если операция выполняется на странице менеджера сервисов, нужно перерисовать переключатели
             if (document.getElementById('service-manager-view').classList.contains('active')) {
                 renderServiceToggles();
             }
         } catch (error) {
-            toast(`保存失败: ${error.message}`, 'error');
+            toast(`Ошибка сохранения: ${error.message}`, 'error');
         } finally {
             if (isManual) {
-                elements.saveConfigButton.textContent = '💾 保存并重载服务';
-                elements.saveConfigButton.disabled = true; // 手动保存后应禁用，直到再次修改
+                elements.saveConfigButton.textContent = '💾 Сохранить и перезагрузить сервисы';
+                elements.saveConfigButton.disabled = true; // После ручного сохранения кнопка должна быть отключена до следующего изменения
             }
             isSaving = false;
         }

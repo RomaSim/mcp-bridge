@@ -1,43 +1,43 @@
 /**
  * input_injector.js
  * 
- * 职责：智能注入文本到网页输入框，支持现代框架（React/Vue）
- * 通过触发原生事件来绕过框架的双向绑定限制
+ * Назначение: интеллектуально внедряет текст в поля ввода на веб-страницах,
+ * поддерживает современные фреймворки (React/Vue),
+ * вызывая нативные события для обхода ограничений двустороннего связывания фреймворков.
  */
 
 /**
- * 向页面输入框注入文本并自动发送
- * @param {string} text - 要注入的文本
- * @param {object} inputConfig - 输入配置
- * @param {string} inputConfig.selector - 输入框选择器
- * @param {string} inputConfig.submitKey - 发送按键 (Enter/Tab等)，null 表示不自动发送
- * @param {array} inputConfig.submitModifiers - 修饰键 (Shift/Ctrl/Alt/Meta)
- * @param {number} inputConfig.submitDelay - 总延迟时间（毫秒），默认 1600ms
- * @returns {Promise<boolean>} - 是否成功
+ * Внедрить текст в поле ввода на странице и автоматически отправить
+ * @param {string} text - Текст для внедрения
+ * @param {object} inputConfig - Конфигурация ввода
+ * @param {string} inputConfig.selector - Селектор поля ввода
+ * @param {string} inputConfig.submitKey - Клавиша отправки (Enter/Tab и т.д.), null означает не отправлять автоматически
+ * @param {array} inputConfig.submitModifiers - Модификаторы (Shift/Ctrl/Alt/Meta)
+ * @param {number} inputConfig.submitDelay - Общая задержка (мс), по умолчанию 1600 мс
+ * @returns {Promise<boolean>} - Успешно ли выполнено
  */
 export async function injectTextAndSubmit(text, inputConfig) {
     try {
 
-        // 获取总延迟时间（默认 1600ms）
+        // Получить общую задержку (по умолчанию 1600 мс)
         const totalDelay = inputConfig.submitDelay || 1600;
         
-        // 按比例分配延迟时间
-        // 比例：聚焦 12.5%、输入后 31.25%、等待UI 50%、发送后 6.25%
+        // Распределить задержку пропорционально
+        // Пропорции: фокус 12.5%, после ввода 31.25%, ожидание UI 50%, после отправки 6.25%
         const delays = {
-            afterFocus: Math.round(totalDelay * 0.125),    // 12.5% → 默认 200ms
-            afterInput: Math.round(totalDelay * 0.3125),   // 31.25% → 默认 500ms
-            beforeSubmit: Math.round(totalDelay * 0.5),    // 50% → 默认 800ms
-            afterSubmit: Math.round(totalDelay * 0.0625)   // 6.25% → 默认 100ms
+            afterFocus: Math.round(totalDelay * 0.125),    // 12.5% → по умолчанию 200 мс
+            afterInput: Math.round(totalDelay * 0.3125),   // 31.25% → по умолчанию 500 мс
+            beforeSubmit: Math.round(totalDelay * 0.5),    // 50% → по умолчанию 800 мс
+            afterSubmit: Math.round(totalDelay * 0.0625)   // 6.25% → по умолчанию 100 мс
         };
 
-
-        // 查找输入框
+        // Найти поле ввода
         const inputElement = findInputElement(inputConfig.selector);
         if (!inputElement) {
-            throw new Error(`Input element not found: ${inputConfig.selector}`);
+            throw new Error(`Элемент ввода не найден: ${inputConfig.selector}`);
         }
         
-        // 聚焦输入框
+        // Сфокусировать поле ввода
         inputElement.focus();
         await sleep(delays.afterFocus);
         
@@ -46,14 +46,13 @@ export async function injectTextAndSubmit(text, inputConfig) {
 ${text}
 </tool_result>`
 
-        // 注入文本（支持 React/Vue）
+        // Внедрить текст (с поддержкой React/Vue)
         setInputValue(inputElement, finalText);
         await sleep(delays.afterInput);
 
-
-        // 如果配置了 submitKey，则等待并自动发送
+        // Если настроена клавиша отправки, подождать и отправить автоматически
         if (inputConfig.submitKey) {
-            // 等待一段时间让 UI 更新
+            // Подождать, чтобы UI обновился
             await sleep(delays.beforeSubmit);
 
             simulateKeyPress(inputElement, inputConfig.submitKey, inputConfig.submitModifiers || []);
@@ -71,14 +70,14 @@ ${text}
 }
 
 /**
- * 查找输入框元素
+ * Найти элемент поля ввода
  */
 function findInputElement(selector) {
-    // 尝试直接查找
+    // Попытаться найти напрямую
     let element = document.querySelector(selector);
     if (element) return element;
 
-    // 尝试在 Shadow DOM 中查找
+    // Попытаться найти в Shadow DOM
     const allElements = document.querySelectorAll('*');
     for (const el of allElements) {
         if (el.shadowRoot) {
@@ -87,10 +86,10 @@ function findInputElement(selector) {
         }
     }
 
-    // 使用通用选择器作为后备
+    // Использовать общие селекторы как запасной вариант
     const fallbackSelectors = [
-        'textarea[placeholder*="输入"]',
-        'textarea[placeholder*="问"]',
+        'textarea[placeholder*="输入"]', // оставлен китайский плейсхолдер для совместимости
+        'textarea[placeholder*="问"]',   // оставлен китайский плейсхолдер для совместимости
         'textarea',
         '[contenteditable="true"]',
         'input[type="text"]'
@@ -107,32 +106,32 @@ function findInputElement(selector) {
 }
 
 /**
- * 检查元素是否可见
+ * Проверить, виден ли элемент
  */
 function isVisible(element) {
     return !!(element.offsetWidth || element.offsetHeight || element.getClientRects().length);
 }
 
 /**
- * 设置输入框的值（兼容 React/Vue 等框架）
+ * Установить значение поля ввода (совместимо с React/Vue и другими фреймворками)
  */
 function setInputValue(element, value) {
     const isContentEditable = element.contentEditable === 'true';
 
     if (isContentEditable) {
-        // contenteditable 元素 - 使用更可靠的方法
+        // Элемент contenteditable — использовать более надёжный метод
         
-        // 方法1: 先清空再插入（模拟用户行为）
+        // Метод 1: сначала очистить, затем вставить (имитация поведения пользователя)
         element.focus();
         
-        // 选中所有内容
+        // Выделить всё содержимое
         const selection = window.getSelection();
         const range = document.createRange();
         range.selectNodeContents(element);
         selection.removeAllRanges();
         selection.addRange(range);
         
-        // 触发 beforeinput 事件（现代框架依赖此事件）
+        // Вызвать событие beforeinput (современные фреймворки зависят от него)
         element.dispatchEvent(new InputEvent('beforeinput', {
             bubbles: true,
             cancelable: true,
@@ -140,22 +139,22 @@ function setInputValue(element, value) {
             data: value
         }));
         
-        // 尝试使用 execCommand（虽然已废弃，但兼容性最好）
+        // Попробовать использовать execCommand (устарел, но обладает лучшей совместимостью)
         try {
             document.execCommand('insertText', false, value);
         } catch (e) {
-            // 如果 execCommand 失败，使用 DOM 操作
+            // Если execCommand не сработал, использовать операцию с DOM
             element.textContent = value;
         }
         
-        // 将光标移到末尾
+        // Переместить курсор в конец
         range.selectNodeContents(element);
         range.collapse(false);
         selection.removeAllRanges();
         selection.addRange(range);
         
     } else {
-        // textarea 或 input
+        // textarea или input
         const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
             window.HTMLTextAreaElement.prototype,
             'value'
@@ -171,8 +170,8 @@ function setInputValue(element, value) {
         }
     }
 
-    // 触发所有可能的事件，确保框架检测到变化
-    // 注意：对于 contenteditable，某些事件已经在上面触发过了
+    // Вызвать все возможные события, чтобы фреймворк обнаружил изменение
+    // Примечание: для contenteditable некоторые события уже были вызваны выше
     const events = [
         new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: value }),
         new Event('change', { bubbles: true, cancelable: true }),
@@ -186,7 +185,7 @@ function setInputValue(element, value) {
 }
 
 /**
- * 模拟按键按下
+ * Имитировать нажатие клавиши
  */
 function simulateKeyPress(element, key, modifiers = []) {
     const keyboardEventInit = {
@@ -202,14 +201,13 @@ function simulateKeyPress(element, key, modifiers = []) {
         metaKey: modifiers.includes('Meta') || modifiers.includes('Cmd')
     };
 
-
     element.dispatchEvent(new KeyboardEvent('keydown', keyboardEventInit));
     element.dispatchEvent(new KeyboardEvent('keypress', keyboardEventInit));
     element.dispatchEvent(new KeyboardEvent('keyup', keyboardEventInit));
 }
 
 /**
- * 获取按键的 keyCode
+ * Получить keyCode клавиши
  */
 function getKeyCode(key) {
     const keyCodes = {
@@ -222,7 +220,7 @@ function getKeyCode(key) {
 }
 
 /**
- * 睡眠函数
+ * Функция задержки
  */
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));

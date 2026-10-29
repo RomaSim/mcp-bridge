@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "MCP Bridge",
   "version": "1.2.0",
-  "description": "通过本地桥接服务，为网页大模型提供强大的MCP工具调用能力。",
+  "description": "С помощью локального мостового сервиса предоставляет веб-большим моделям мощные возможности вызова инструментов MCP.",
   "permissions": [
     "storage",
     "scripting",
@@ -84,7 +84,7 @@
   ],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "MCP Bridge 控制中心",
+    "default_title": "Центр управления MCP Bridge",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png"

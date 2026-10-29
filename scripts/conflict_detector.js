@@ -1,6 +1,6 @@
 const CONFLICT_LIST_URL = 'https://raw.githubusercontent.com/WongJingGitt/mcp-bridge/refs/heads/master/config/extension.json';
-const DEDUP_INTERVAL = 5 * 60 * 1000; // 5 分钟去重
-const REMOTE_TIMEOUT = 2000; // 远程 2s 超时
+const DEDUP_INTERVAL = 5 * 60 * 1000; // 5 минут дедупликации
+const REMOTE_TIMEOUT = 2000; // Таймаут удалённого запроса 2 с
 
 export async function detectConflicts() {
     try {
@@ -12,7 +12,7 @@ export async function detectConflicts() {
 
         let conflictList = null;
 
-        // 1. 远程（2s 超时）
+        // 1. Удалённо (таймаут 2 с)
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), REMOTE_TIMEOUT);
@@ -24,9 +24,9 @@ export async function detectConflicts() {
                 await chrome.storage.local.set({ conflict_extension_cache: { data, cached_at: Date.now() } });
                 conflictList = data;
             }
-        } catch (e) { /* ok */ }
+        } catch (e) { /* ок */ }
 
-        // 2. 缓存
+        // 2. Кэш
         if (!conflictList) {
             const { conflict_extension_cache } = await chrome.storage.local.get('conflict_extension_cache');
             if (conflict_extension_cache?.data) {
@@ -34,7 +34,7 @@ export async function detectConflicts() {
             }
         }
 
-        // 3. 本地
+        // 3. Локально
         if (!conflictList) {
             try {
                 const response = await fetch(chrome.runtime.getURL('config/extension.json'));
@@ -42,10 +42,10 @@ export async function detectConflicts() {
                     conflictList = await response.json();
                     await chrome.storage.local.set({ conflict_extension_cache: { data: conflictList, cached_at: Date.now() } });
                 }
-            } catch (e) { /* ok */ }
+            } catch (e) { /* ок */ }
         }
 
-        // 4. 空
+        // 4. Пусто
         if (!conflictList || !Array.isArray(conflictList) || conflictList.length === 0) {
             await chrome.storage.local.set({ conflict_disabled_sites: [], conflict_check_timestamp: Date.now() });
             return;
@@ -53,7 +53,7 @@ export async function detectConflicts() {
 
         const installedExtensions = await chrome.management.getAll();
 
-        // DEBUG
+        // ОТЛАДКА
         console.log('[MCP Bridge] ====== Installed Extensions ======');
         installedExtensions.forEach((ext, i) => {
             console.log(`[MCP Bridge] [${i}] id: ${ext.id}, name: ${ext.name}, enabled: ${ext.enabled}`);

@@ -1,14 +1,14 @@
 /**
  * api_client.js
  *
- * 职责: 封装所有与本地 MCP Bridge Server (localhost:3849) 的 API 通信。
- * 提供了一组简单、异步的函数供 background.js 调用。
- * 集中处理网络请求、URL构造和基本的错误处理。
+ * Назначение: инкапсулирует всё API-взаимодействие с локальным MCP Bridge Server (localhost:3849).
+ * Предоставляет набор простых асинхронных функций для вызова из background.js.
+ * Централизованно обрабатывает сетевые запросы, построение URL и базовую обработку ошибок.
  */
 
 /**
- * 从 chrome.storage 获取桥接服务端口
- * @returns {Promise<number>} - 端口号，默认 3849
+ * Получить порт bridge-сервиса из chrome.storage
+ * @returns {Promise<number>} - Номер порта, по умолчанию 3849
  */
 async function getBridgePort() {
     try {
@@ -21,8 +21,8 @@ async function getBridgePort() {
 }
 
 /**
- * 获取基础 URL
- * @returns {Promise<string>} - 基础 URL
+ * Получить базовый URL
+ * @returns {Promise<string>} - Базовый URL
  */
 async function getBaseUrl() {
     const port = await getBridgePort();
@@ -30,11 +30,11 @@ async function getBaseUrl() {
 }
 
 /**
- * 封装的 fetch 函数，增加了超时和统一的错误处理。
- * @param {string} url - 目标 URL。
- * @param {RequestInit} options - fetch 的配置选项。
- * @param {number} timeout - 超时时间 (毫秒)。
- * @returns {Promise<any>} - 解析后的 JSON 数据。
+ * Обёртка fetch с таймаутом и единой обработкой ошибок.
+ * @param {string} url - Целевой URL.
+ * @param {RequestInit} options - Опции конфигурации fetch.
+ * @param {number} timeout - Таймаут (мс).
+ * @returns {Promise<any>} - Разобранные JSON-данные.
  */
 async function fetchWithTimeout(url, options = {}, timeout = 5000) {
     const controller = new AbortController();
@@ -47,11 +47,10 @@ async function fetchWithTimeout(url, options = {}, timeout = 5000) {
             signal: controller.signal
         });
 
-
         clearTimeout(id);
 
         if (!response.ok) {
-            // 尝试解析错误响应体
+            // Попытаться разобрать тело ответа с ошибкой
             let errorData;
             try {
                 errorData = await response.json();
@@ -59,18 +58,18 @@ async function fetchWithTimeout(url, options = {}, timeout = 5000) {
                 errorData = { detail: `HTTP error! status: ${response.status}` };
             }
             
-            // FastAPI 返回的错误格式: { detail: ... }
-            // detail 可能是字符串或对象
+            // Формат ошибки, возвращаемый FastAPI: { detail: ... }
+            // detail может быть строкой или объектом
             let errorMessage = '';
             if (typeof errorData.detail === 'object') {
-                // 详细错误对象
+                // Объект подробной ошибки
                 errorMessage = errorData.detail.error || JSON.stringify(errorData.detail);
             } else {
-                // 字符串错误
+                // Строковая ошибка
                 errorMessage = errorData.detail || errorData.error || `HTTP error! status: ${response.status}`;
             }
             
-            // 保存完整的错误信息供后续使用
+            // Сохранить полную информацию об ошибке для дальнейшего использования
             const error = new Error(errorMessage);
             error.details = errorData.detail;
             error.status = response.status;
@@ -83,16 +82,16 @@ async function fetchWithTimeout(url, options = {}, timeout = 5000) {
         clearTimeout(id);
         if (error.name === 'AbortError') {
             console.error('MCP Bridge: Fetch aborted due to timeout', url);
-            throw new Error('请求超时，请检查 MCP Bridge 服务是否正在运行。');
+            throw new Error('Превышено время ожидания запроса. Проверьте, запущен ли сервис MCP Bridge.');
         }
-        // 重新抛出更具体的错误信息
+        // Пробросить более конкретное сообщение об ошибке
         console.error('MCP Bridge: Fetch error', error);
-        throw new Error(error.message || '网络请求失败，无法连接到 MCP Bridge 服务。');
+        throw new Error(error.message || 'Сетевой запрос не удался. Не удалось подключиться к сервису MCP Bridge.');
     }
 }
 
 /**
- * 检查本地 MCP Bridge Server 的健康状况。
+ * Проверить состояние локального MCP Bridge Server.
  * @returns {Promise<{status: string}>}
  */
 export async function checkHealth() {
@@ -101,7 +100,7 @@ export async function checkHealth() {
 }
 
 /**
- * 获取所有已加载服务的列表及其描述 (第一层发现)。
+ * Получить список всех загруженных сервисов и их описания (первый уровень обнаружения).
  * @returns {Promise<Array<{name: string, description: string}>>}
  */
 export async function getServices() {
@@ -110,13 +109,13 @@ export async function getServices() {
     if (data && data.success && Array.isArray(data.services)) {
         return data.services;
     }
-    throw new Error('从 Bridge 服务获取服务列表失败或格式不正确。');
+    throw new Error('Не удалось получить список сервисов от Bridge-сервиса или формат неверен.');
 }
 
 /**
- * 根据服务名称获取该服务下的所有具体工具 (第二层发现)。
- * @param {string} serverName - 服务名称。
- * @returns {Promise<{service_name: string, service_description: string, tools: Array<Object>}>} - 包含服务信息和工具列表的对象。
+ * Получить все конкретные инструменты указанного сервиса по имени сервиса (второй уровень обнаружения).
+ * @param {string} serverName - Имя сервиса.
+ * @returns {Promise<{service_name: string, service_description: string, tools: Array<Object>}>} - Объект, содержащий информацию о сервисе и список инструментов.
  */
 export async function getToolsByServer(serverName) {
     const baseUrl = await getBaseUrl();
@@ -124,18 +123,18 @@ export async function getToolsByServer(serverName) {
     url.searchParams.append('serverName', serverName);
     const data = await fetchWithTimeout(url.toString());
     if (data && data.success) {
-        // 服务端现在返回 { success: true, tools: { service_name, service_description, tools: [...] } }
-        // 或者可能是 { success: true, tools: {...} }
+        // Сервер теперь возвращает { success: true, tools: { service_name, service_description, tools: [...] } }
+        // или, возможно, { success: true, tools: {...} }
         return data.tools;
     }
-    throw new Error(`从 Bridge 服务获取 "${serverName}" 的工具列表失败。`);
+    throw new Error(`Не удалось получить список инструментов для "${serverName}" от Bridge-сервиса.`);
 }
 
 /**
- * 执行一个指定的工具。
- * @param {string} toolName - 工具名称。
- * @param {Object} args - 工具参数。
- * @returns {Promise<any>} - 工具执行的结果。
+ * Выполнить указанный инструмент.
+ * @param {string} toolName - Имя инструмента.
+ * @param {Object} args - Параметры инструмента.
+ * @returns {Promise<any>} - Результат выполнения инструмента.
  */
 export async function executeTool(toolName, args) {
     const baseUrl = await getBaseUrl();
@@ -148,12 +147,12 @@ export async function executeTool(toolName, args) {
             name: toolName,
             arguments: args
         })
-    }, 120000); // 工具执行可能耗时较长，设置更长的超时时间 (2分钟)
+    }, 120000); // Выполнение инструмента может быть долгим, поэтому установлен более длительный таймаут (2 минуты)
 
     if (data && data.success) {
-        // 检查是否是缓存引用
+        // Проверить, является ли это ссылкой на кэш
         if (data.result_type === 'cached_reference') {
-            // 返回完整的缓存信息
+            // Вернуть полную информацию о кэше
             return {
                 result_type: data.result_type,
                 cache_id: data.cache_id,
@@ -162,14 +161,14 @@ export async function executeTool(toolName, args) {
                 message: data.message
             };
         }
-        // 普通结果，返回 result 字段
+        // Обычный результат, вернуть поле result
         return data.result;
     }
-    throw new Error(data.error || `执行工具 "${toolName}" 失败。`);
+    throw new Error(data.error || `Не удалось выполнить инструмент "${toolName}".`);
 }
 
 /**
- * 获取远程 mcp-config.json 的内容。
+ * Получить содержимое удалённого mcp-config.json.
  * @returns {Promise<Object>}
  */
 export async function getConfig() {
@@ -180,22 +179,22 @@ export async function getConfig() {
         if (data && data.success) {
             return data.config;
         }
-        const error = new Error('获取远程配置失败。');
+        const error = new Error('Не удалось получить удалённую конфигурацию.');
         console.error('MCP Bridge: Config retrieval failed', error);
         throw error;
     } catch (error) {
         console.error('MCP Bridge: Error getting config', error);
-        // 添加更多错误信息
+        // Добавить больше информации об ошибке
         if (error.name === 'TypeError' && error.message.includes('fetch')) {
-            throw new Error('无法连接到本地MCP Bridge服务。请确保服务正在运行。');
+            throw new Error('Не удалось подключиться к локальному MCP Bridge. Убедитесь, что сервис запущен.');
         }
         throw error;
     }
 }
 
 /**
- * 更新 mcp-config.json 的内容并触发重载。
- * @param {Object} newConfig - 新的配置对象。
+ * Обновить содержимое mcp-config.json и запустить перезагрузку.
+ * @param {Object} newConfig - Новый объект конфигурации.
  * @returns {Promise<{success: boolean, message: string}>}
  */
 export async function updateConfig(newConfig) {
@@ -210,11 +209,11 @@ export async function updateConfig(newConfig) {
 }
 
 /**
- * 获取缓存的结果（完整或分段）
- * @param {string} cacheId - 缓存ID
- * @param {number} [start] - 可选，起始位置（字符索引）
- * @param {number} [end] - 可选，结束位置（字符索引）
- * @returns {Promise<Object>} - 包含 content 和 metadata 的对象
+ * Получить кэшированный результат (полный или по частям)
+ * @param {string} cacheId - ID кэша
+ * @param {number} [start] - Необязательно, начальная позиция (индекс символа)
+ * @param {number} [end] - Необязательно, конечная позиция (индекс символа)
+ * @returns {Promise<Object>} - Объект, содержащий content и metadata
  */
 export async function getCachedResult(cacheId, start = null, end = null) {
     const baseUrl = await getBaseUrl();
@@ -227,7 +226,7 @@ export async function getCachedResult(cacheId, start = null, end = null) {
         url.searchParams.append('end', end);
     }
     
-    const data = await fetchWithTimeout(url.toString(), {}, 30000); // 30秒超时
+    const data = await fetchWithTimeout(url.toString(), {}, 30000); // Таймаут 30 секунд
     
     if (data && data.success) {
         return {
@@ -236,16 +235,16 @@ export async function getCachedResult(cacheId, start = null, end = null) {
         };
     }
     
-    throw new Error(data.error || '获取缓存结果失败');
+    throw new Error(data.error || 'Не удалось получить кэшированный результат');
 }
 
 /**
- * 在缓存内容中搜索关键词
- * @param {string} cacheId - 缓存ID
- * @param {string} keyword - 搜索关键词
- * @param {boolean} [caseSensitive] - 是否区分大小写，默认false
- * @param {number} [maxResults] - 最大返回结果数，默认50
- * @returns {Promise<Object>} - 搜索结果，包含匹配的行号、列号和内容片段
+ * Найти ключевое слово в содержимом кэша
+ * @param {string} cacheId - ID кэша
+ * @param {string} keyword - Ключевое слово для поиска
+ * @param {boolean} [caseSensitive] - Учитывать ли регистр, по умолчанию false
+ * @param {number} [maxResults] - Максимальное количество возвращаемых результатов, по умолчанию 50
+ * @returns {Promise<Object>} - Результаты поиска, содержащие номера строк, столбцы и фрагменты содержимого
  */
 export async function searchCachedResult(cacheId, keyword, caseSensitive = false, maxResults = 50) {
     const baseUrl = await getBaseUrl();
@@ -260,21 +259,21 @@ export async function searchCachedResult(cacheId, keyword, caseSensitive = false
             case_sensitive: caseSensitive,
             max_results: maxResults
         })
-    }, 30000); // 30秒超时
+    }, 30000); // Таймаут 30 секунд
     
     if (data && data.success) {
         return data.result;
     }
     
-    throw new Error(data.error || '搜索缓存失败');
+    throw new Error(data.error || 'Не удалось выполнить поиск в кэше');
 }
 
 /**
- * 获取缓存中指定行的上下文
- * @param {string} cacheId - 缓存ID
- * @param {number} lineNum - 目标行号（从1开始）
- * @param {number} [contextLines] - 上下文行数，默认3
- * @returns {Promise<Object>} - 包含目标行及上下文的内容
+ * Получить контекст указанной строки в кэше
+ * @param {string} cacheId - ID кэша
+ * @param {number} lineNum - Целевой номер строки (начиная с 1)
+ * @param {number} [contextLines] - Количество строк контекста, по умолчанию 3
+ * @returns {Promise<Object>} - Содержимое, включающее целевую строку и контекст
  */
 export async function getCacheContext(cacheId, lineNum, contextLines = 3) {
     const baseUrl = await getBaseUrl();
@@ -288,11 +287,11 @@ export async function getCacheContext(cacheId, lineNum, contextLines = 3) {
             line_num: lineNum,
             context_lines: contextLines
         })
-    }, 30000); // 30秒超时
+    }, 30000); // Таймаут 30 секунд
     
     if (data && data.success) {
         return data.result;
     }
     
-    throw new Error(data.error || '获取上下文失败');
+    throw new Error(data.error || 'Не удалось получить контекст');
 }

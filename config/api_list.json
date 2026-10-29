@@ -2,7 +2,7 @@
   {
     "name": "deepseek",
     "hostname": "chat.deepseek.com",
-    "label": "DeepSeek官网",
+    "label": "Официальный сайт DeepSeek",
     "api": ["/api/v0/chat/completion", "/api/v0/chat/edit_message"],
     "promptPath": "prompt",
     "isJsonString": false,
@@ -35,7 +35,7 @@
   {
     "name": "yuanbao",
     "hostname": "yuanbao.tencent.com",
-    "label": "腾讯元宝",
+    "label": "Tencent Yuanbao",
     "api": ["/api/chat/"],
     "promptPath": ["prompt", "displayPrompt"],
     "isJsonString": false,
@@ -71,7 +71,7 @@
   {
     "name": "tongyi",
     "hostname": "www.tongyi.com",
-    "label": "通义千问",
+    "label": "Tongyi Qianwen",
     "api": ["/dialog/conversation"],
     "promptPath": "contents.0.content",
     "isJsonString": false,
@@ -121,7 +121,7 @@
   {
     "name": "doubao",
     "hostname": "www.doubao.com",
-    "label": "豆包",
+    "label": "Doubao",
     "api": ["/samantha/chat/completion"],
     "promptPath": "messages.0.content.text",
     "isJsonString": true,
@@ -204,19 +204,18 @@
     },
     "onLoadTip": {
       "message": [
-        "Google AI Studio不支持自动注入System Prompt功能",
+        "Google AI Studio не поддерживает автоматическую инъекцию System Prompt",
         "",
-        "请在每次新建对话后，在插件面板中点击刷新System Prompt，手动注入System Prompt内容",
-        "同时，该网站不支持自动读取模型的工具回复，需要在右下角浮窗中，点击时钟图标手动识别"
-
+        "После каждого создания нового диалога нажмите «Обновить System Prompt» на панели плагина, чтобы вручную внедрить содержимое System Prompt",
+        "Кроме того, этот сайт не поддерживает автоматическое чтение ответов инструментов модели. В плавающем окне в правом нижнем углу нажмите на иконку часов для ручного распознавания"
       ],
-      "dontShowAgainText": "不再显示此提示"
-    } 
+      "dontShowAgainText": "Больше не показывать это уведомление"
+    }
   },
   {
     "name": "qianwen",
     "hostname": "www.qianwen.com",
-    "label": "通义千问",
+    "label": "Tongyi Qianwen",
     "api": ["/dialog/conversation", "api/v2/chat"],
     "promptPath": ["messages.0.content", "messages.0.meta_data.ori_query"],
     "isJsonString": false,
@@ -241,30 +240,30 @@
       "submitModifiers": [],
       "submitDelay": 1600
     },
-      "newConversationFlag": {
-          "from": "requestBody",
-          "path": "scene_param",
-          "checkValue": "first_turn",
-          "valueType": "string",
-          "checkExists": true
-      },
-      "promptFilter": {
-          "preset": "findByField",
-          "params": {
-              "arrayPath": "messages",
-              "matchField": "mime_type",
-              "matchValue": "text/plain",
-              "returnField": "content"
-          }
-      },
-      "promptSetFilter": {
-          "preset": "setByField",
-          "params": {
-              "arrayPath": "messages",
-              "matchField": "mime_type",
-              "matchValue": "text/plain",
-              "setField": ["content", "meta_data.ori_query"]
-          }
+    "newConversationFlag": {
+      "from": "requestBody",
+      "path": "scene_param",
+      "checkValue": "first_turn",
+      "valueType": "string",
+      "checkExists": true
+    },
+    "promptFilter": {
+      "preset": "findByField",
+      "params": {
+        "arrayPath": "messages",
+        "matchField": "mime_type",
+        "matchValue": "text/plain",
+        "returnField": "content"
       }
+    },
+    "promptSetFilter": {
+      "preset": "setByField",
+      "params": {
+        "arrayPath": "messages",
+        "matchField": "mime_type",
+        "matchValue": "text/plain",
+        "setField": ["content", "meta_data.ori_query"]
+      }
+    }
   }
 ]

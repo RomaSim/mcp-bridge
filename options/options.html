@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MCP Bridge - 设置</title>
+    <title>MCP Bridge - Настройки</title>
     <link rel="stylesheet" href="options.css">
 </head>
 <body>
@@ -15,19 +15,19 @@
         </div>
         <nav class="sidebar-nav">
             <div class="nav-section">
-                <span class="nav-section-title">设置</span>
+                <span class="nav-section-title">Настройки</span>
                 <ul class="nav-list">
                     <li class="nav-item active" data-view="sites-view">
                         <span class="nav-icon">🌐</span>
-                        <span class="nav-label">站点管理</span>
+                        <span class="nav-label">Управление сайтами</span>
                     </li>
                     <li class="nav-item" data-view="service-manager-view">
                         <span class="nav-icon">🔧</span>
-                        <span class="nav-label">服务管理</span>
+                        <span class="nav-label">Управление сервисами</span>
                     </li>
                     <li class="nav-item" data-view="service-config-view">
                         <span class="nav-icon">{ }</span>
-                        <span class="nav-label">服务配置</span>
+                        <span class="nav-label">Конфигурация сервисов</span>
                     </li>
                 </ul>
             </div>
@@ -41,26 +41,26 @@
         <!-- View 1: Sites -->
         <main id="sites-view" class="view active">
             <div class="view-header">
-                <h1 class="view-title">站点管理</h1>
-                <p class="view-subtitle">管理各 AI 平台的注入策略与行为配置</p>
+                <h1 class="view-title">Управление сайтами</h1>
+                <p class="view-subtitle">Управление стратегиями внедрения и настройками поведения для AI-платформ</p>
             </div>
             <div class="view-body">
                 <div class="port-card">
                     <div class="port-card-info">
                         <span class="port-card-icon">🔌</span>
                         <div>
-                            <div class="port-card-label">桥接服务端口</div>
-                            <div class="port-card-hint">MCP Bridge Server 的端口号</div>
+                            <div class="port-card-label">Порт bridge-сервиса</div>
+                            <div class="port-card-hint">Номер порта MCP Bridge Server</div>
                         </div>
                     </div>
                     <div class="port-card-input">
                         <input type="number" id="bridgePort" min="1" max="65535" placeholder="3849" />
-                        <button id="savePortButton" class="btn btn-secondary">保存</button>
+                        <button id="savePortButton" class="btn btn-secondary">Сохранить</button>
                     </div>
                 </div>
 
                 <div class="info-banner">
-                    <span>💡 关闭「首次自动注入」后，该站点将完全不注入 System Prompt。你仍可在浮窗中手动注入。</span>
+                    <span>💡 После отключения «Первое авто-внедрение» на этом сайте System Prompt не будет внедряться вовсе. Вы по-прежнему можете внедрить его вручную через плавающее окно.</span>
                 </div>
 
                 <ul id="siteList" class="site-grid">
@@ -72,8 +72,8 @@
         <!-- View 2: Service Manager -->
         <main id="service-manager-view" class="view">
             <div class="view-header">
-                <h1 class="view-title">服务管理</h1>
-                <p class="view-subtitle">启用或禁用 MCP 服务，状态实时检测</p>
+                <h1 class="view-title">Управление сервисами</h1>
+                <p class="view-subtitle">Включение или отключение сервисов MCP, статус проверяется в реальном времени</p>
             </div>
             <div class="view-body">
                 <ul id="serviceToggleList" class="service-list">
@@ -85,26 +85,26 @@
         <!-- View 3: Service Config -->
         <main id="service-config-view" class="view">
             <div class="view-header">
-                <h1 class="view-title">服务配置</h1>
-                <p class="view-subtitle">直接编辑 JSON 配置，保存后自动重载服务</p>
+                <h1 class="view-title">Конфигурация сервисов</h1>
+                <p class="view-subtitle">Прямое редактирование JSON-конфигурации; после сохранения сервисы перезагружаются автоматически</p>
             </div>
             <div class="view-body config-body">
                 <div class="config-help-card">
                     <div class="config-help-header">
                         <span>📋</span>
-                        <strong>支持的配置格式</strong>
+                        <strong>Поддерживаемые форматы конфигурации</strong>
                     </div>
                     <div class="config-help-formats">
                         <div class="format-item">
-                            <span class="format-label">完整配置</span>
+                            <span class="format-label">Полная конфигурация</span>
                             <code>{"mcpServers": {"name": {...}}}</code>
                         </div>
                         <div class="format-item">
-                            <span class="format-label">单个服务</span>
+                            <span class="format-label">Один сервис</span>
                             <code>{"command": "npx", "args": [...]}</code>
                         </div>
                         <div class="format-item">
-                            <span class="format-label">多个服务</span>
+                            <span class="format-label">Несколько сервисов</span>
                             <code>{"srv1": {...}, "srv2": {...}}</code>
                         </div>
                     </div>
@@ -112,13 +112,13 @@
                 <div class="config-options-bar">
                     <label class="checkbox-label">
                         <input type="checkbox" id="replaceExistingServices" checked />
-                        <span>自动替换已存在的服务</span>
+                        <span>Автоматически заменять существующие сервисы</span>
                     </label>
                 </div>
-                <textarea id="configEditor" spellcheck="false" placeholder="正在加载配置..."></textarea>
+                <textarea id="configEditor" spellcheck="false" placeholder="Загрузка конфигурации..."></textarea>
                 <div class="config-actions">
-                    <button id="reloadConfigButton" class="btn btn-secondary">重新加载</button>
-                    <button id="saveConfigButton" class="btn btn-primary" disabled>保存并重载</button>
+                    <button id="reloadConfigButton" class="btn btn-secondary">Перезагрузить</button>
+                    <button id="saveConfigButton" class="btn btn-primary" disabled>Сохранить и перезагрузить</button>
                 </div>
             </div>
         </main>

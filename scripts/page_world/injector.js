@@ -1,5 +1,5 @@
 /**
- * injector.js (Corrected with postMessage for both Fetch and XHR)
+ * injector.js (Исправлено с использованием postMessage как для Fetch, так и для XHR)
  */
 (() => {
     if (typeof hookFetch === 'undefined' || typeof ah === 'undefined') {
@@ -9,7 +9,7 @@
 
     const MESSAGE_SOURCE = 'mcp-bridge-injector';
 
-    // --- 通用消息发送与等待函数 ---
+    // --- Универсальная функция отправки сообщения и ожидания ответа ---
     function sendMessageAndWaitForResponse(type, payload) {
         return new Promise(resolve => {
             const requestId = `req_${Date.now()}_${Math.random()}`;
@@ -34,14 +34,14 @@
         });
     }
 
-    // --- Fetch Hook ---
+    // --- Перехват Fetch ---
     hookFetch({
         optionsHook: async function(options, url) {
             if (!shouldInterceptRequest(url)) {
                 return options;
             }
             
-            // 检查是否需要跳过请求修改（仅监听响应）
+            // Проверить, нужно ли пропустить модификацию запроса (только прослушивание ответа)
             const siteConfig = getSiteConfig(url);
             if (siteConfig && siteConfig.skipRequestModification) {
                 console.log('[MCP Bridge] Skip request modification for:', url);
@@ -50,25 +50,25 @@
             
             const responsePayload = await sendMessageAndWaitForResponse('FETCH_REQUEST_BODY', { url, body: options.body });
             
-            // modifiedBody 应该是字符串，直接赋值
+            // modifiedBody должен быть строкой, присваиваем напрямую
             if (responsePayload && responsePayload.modifiedBody !== undefined) {
                 options.body = responsePayload.modifiedBody;
             }
             return options;
-        }, // 2001 文字 2070 编程
+        }, // 2001 текст 2070 программирование
 
         responseHook: async function(response) {
             if (!shouldInterceptRequest(response.url)) return response;
 
-            // 检查是否是流式响应
+            // Проверить, является ли ответ потоковым
             const contentType = response.headers.get('content-type') || '';
             const isStreamResponse = contentType.includes('stream') || contentType.includes('event-stream');
 
             if (isStreamResponse) {
-                // 对于流式响应，需要读取流并重新构造
+                // Для потоковых ответов нужно прочитать поток и пересобрать его
                 return handleStreamingResponse(response);
             } else {
-                // 非流式响应，直接读取全文
+                // Непотоковый ответ — читаем сразу весь текст
                 const responseClone = response.clone();
                 const fullText = await responseClone.text().catch(() => '');
 
@@ -84,8 +84,8 @@
         }
     });
 
-    // --- Ajax Hook ---
-    // 存储 XHR 实例信息
+    // --- Перехват Ajax ---
+    // Хранение информации о XHR-экземплярах
     const xhrInstances = new WeakMap();
     
     ah.proxy({
@@ -95,7 +95,7 @@
                 return;
             }
 
-            // 检查是否需要跳过请求修改（仅监听响应）
+            // Проверить, нужно ли пропустить модификацию запроса (только прослушивание ответа)
             const siteConfig = getSiteConfig(config.url);
             if (siteConfig && siteConfig.skipRequestModification) {
                 console.log('[MCP Bridge] Skip request modification for:', config.url);
@@ -126,7 +126,7 @@
         }
     });
 
-    // --- 在 ajaxhook 之后，额外劫持 XHR 来监听流式响应 ---
+    // --- После ajaxhook дополнительно перехватываем XHR для прослушивания потоковых ответов ---
     (function setupXHRStreamMonitoring() {
         const OriginalXHR = window.XMLHttpRequest;
         const originalOpen = OriginalXHR.prototype.open;
@@ -149,22 +149,22 @@
                 return originalSend.call(this, body);
             }
 
-            // 获取当前站点的配置
+            // Получить конфигурацию текущего сайта
             const siteConfig = getSiteConfig(xhrInfo.url);
             if (!siteConfig || !siteConfig.response) {
                 return originalSend.call(this, body);
             }
 
-            // 监听 progress 事件（对于 SSE 更可靠）
+            // Слушать событие progress (надёжнее для SSE)
             this.addEventListener('progress', () => {
                 try {
                     const responseText = this.responseText || '';
                     
                     if (responseText.length <= xhrInfo.lastProcessedLength) {
-                        return; // 没有新数据
+                        return; // Нет новых данных
                     }
 
-                    // 使用配置化的解析器
+                    // Использовать конфигурируемый парсер
                     const parsedContent = parseResponse(responseText, siteConfig.response);
                     
                     const hasToolCodeStart = parsedContent.includes('<tool_code>');
@@ -173,7 +173,7 @@
                     xhrInfo.accumulatedText = parsedContent;
                     xhrInfo.lastProcessedLength = responseText.length;
 
-                    // 发送累积的解析后内容
+                    // Отправить накопленное распарсенное содержимое
                     window.postMessage({
                         source: MESSAGE_SOURCE,
                         direction: 'to-content-script',
@@ -185,7 +185,7 @@
                 }
             });
 
-            // 监听 readystatechange（作为备用）
+            // Слушать readystatechange (как запасной вариант)
             this.addEventListener('readystatechange', () => {
                 if (this.readyState === 4 && xhrInfo) {
                     const responseText = this.responseText || '';
@@ -204,16 +204,16 @@
         };
     })();
 
-    // --- 配置化的响应解析器 ---
+    // --- Конфигурируемый парсер ответа ---
     /**
-     * 根据配置解析响应内容
-     * @param {string} rawText - 原始响应文本
-     * @param {object} responseConfig - 响应配置对象
-     * @returns {string} - 解析后的文本内容
+     * Разобрать содержимое ответа в соответствии с конфигурацией
+     * @param {string} rawText - Исходный текст ответа
+     * @param {object} responseConfig - Объект конфигурации ответа
+     * @returns {string} - Разобранное текстовое содержимое
      */
     function parseResponse(rawText, responseConfig) {
         if (!responseConfig) {
-            // 没有配置，返回原始文本
+            // Нет конфигурации — вернуть исходный текст
             return rawText;
         }
 
@@ -231,12 +231,12 @@
     }
 
     /**
-     * 解析 SSE (Server-Sent Events) 格式的响应
-     * @param {string} rawText - 原始 SSE 文本
-     * @param {string} format - SSE 格式，如 "data: {json}" 或 "event: {event}\ndata: {json}"
-     * @param {array} contentPaths - 内容字段路径数组（优先级从高到低）
-     * @param {object} filterRules - 过滤规则配置（可选）
-     * @returns {string} - 累积的文本内容
+     * Разобрать ответ в формате SSE (Server-Sent Events)
+     * @param {string} rawText - Исходный SSE-текст
+     * @param {string} format - Формат SSE, например "data: {json}" или "event: {event}\ndata: {json}"
+     * @param {array} contentPaths - Массив путей к полю содержимого (по убыванию приоритета)
+     * @param {object} filterRules - Конфигурация правил фильтрации (необязательно)
+     * @returns {string} - Накопленное текстовое содержимое
      */
     function parseSSEResponse(rawText, format, contentPaths, filterRules) {
         const lines = rawText.split('\n');
@@ -244,39 +244,39 @@
         let extractedCount = 0;
         let skippedCount = 0;
         
-        // 临时调试:记录所有提取的字符
+        // Временная отладка: записать все извлечённые символы
         const debugLog = [];
         const skippedData = [];
 
         for (const line of lines) {
             if (line.startsWith('data: ')) {
                 try {
-                    const jsonStr = line.substring(6).trim(); // 移除 "data: " 前缀
+                    const jsonStr = line.substring(6).trim(); // Удалить префикс "data: "
                     
-                    // 跳过 [DONE] 等特殊标记
+                    // Пропустить специальные маркеры вроде [DONE]
                     if (jsonStr === '[DONE]' || jsonStr === '') continue;
                     
                     const data = JSON.parse(jsonStr);
                     
-                    // 按优先级尝试从配置的路径中提取内容
+                    // Пытаться извлечь содержимое из сконфигурированных путей в порядке приоритета
                     const content = extractContentByPaths(data, contentPaths, filterRules);
                     if (content !== null && content !== undefined && content !== '') {
                         extractedCount++;
                         accumulatedContent += content;
                         
-                        // 只记录与 tool 相关的字符
+                        // Записывать только символы, связанные с tool
                         if (content === '<' || content.includes('tool') || content.includes('>')) {
                             debugLog.push(content);
                         }
                     } else {
                         skippedCount++;
-                        // 记录被跳过的数据(只记录前20个)
+                        // Записать пропущенные данные (только первые 20)
                         if (skippedData.length < 20 && (line.includes('tool') || line.includes('<'))) {
                             skippedData.push(jsonStr.substring(0, 100));
                         }
                     }
                 } catch (e) {
-                    // JSON 解析失败，可能是纯文本或其他格式
+                    // Ошибка разбора JSON — возможно, это простой текст или другой формат
                 }
             }
         }
@@ -286,11 +286,11 @@
     }
 
     /**
-     * 解析纯 JSON 格式的响应
-     * @param {string} rawText - 原始 JSON 文本
-     * @param {array} contentPaths - 内容字段路径数组
-     * @param {object} filterRules - 过滤规则配置（可选）
-     * @returns {string} - 提取的内容
+     * Разобрать ответ в чистом формате JSON
+     * @param {string} rawText - Исходный JSON-текст
+     * @param {array} contentPaths - Массив путей к полю содержимого
+     * @param {object} filterRules - Конфигурация правил фильтрации (необязательно)
+     * @returns {string} - Извлечённое содержимое
      */
     function parseJSONResponse(rawText, contentPaths, filterRules) {
         try {
@@ -303,10 +303,10 @@
     }
 
     /**
-     * 从对象中按路径提取内容（支持嵌套路径）
-     * @param {object} obj - 数据对象
-     * @param {array} paths - 路径数组，如 ["choices.0.delta.content", "content"]
-     * @returns {string|null} - 提取的内容，如果都不存在则返回 null
+     * Извлечь содержимое из объекта по путям (поддерживаются вложенные пути)
+     * @param {object} obj - Объект данных
+     * @param {array} paths - Массив путей, например ["choices.0.delta.content", "content"]
+     * @returns {string|null} - Извлечённое содержимое; если ни одно не найдено — null
      */
     function extractContentByPaths(obj, paths, filterRules) {
         if (!paths || !Array.isArray(paths)) {
@@ -316,20 +316,20 @@
         for (const path of paths) {
             const value = getByPath(obj, path);
             if (value !== undefined && value !== null && value !== '') {
-                // 如果值是对象或数组，跳过（不是纯文本内容）
+                // Если значение — объект или массив, пропустить (это не текстовое содержимое)
                 if (typeof value === 'object') {
                     continue;
                 }
                 
-                // 如果配置了过滤规则，应用过滤
+                // Если настроены правила фильтрации — применить их
                 if (filterRules) {
                     const { pathField, excludePatterns, includePatterns } = filterRules;
                     
-                    // 检查是否有路径字段
+                    // Проверить наличие поля пути
                     if (pathField && obj[pathField]) {
                         const pathValue = String(obj[pathField]);
                         
-                        // 先检查排除模式
+                        // Сначала проверить шаблоны исключения
                         if (excludePatterns && Array.isArray(excludePatterns)) {
                             let shouldExclude = false;
                             for (const pattern of excludePatterns) {
@@ -339,11 +339,11 @@
                                 }
                             }
                             if (shouldExclude) {
-                                continue; // 跳过此值
+                                continue; // Пропустить это значение
                             }
                         }
                         
-                        // 再检查包含模式（如果配置了）
+                        // Затем проверить шаблоны включения (если настроены)
                         if (includePatterns && Array.isArray(includePatterns) && includePatterns.length > 0) {
                             let matchesInclude = false;
                             for (const pattern of includePatterns) {
@@ -352,7 +352,7 @@
                                     break;
                                 }
                             }
-                            // 如果配置了包含模式但不匹配，跳过此值
+                            // Если настроены шаблоны включения, но совпадения нет — пропустить значение
                             if (!matchesInclude) {
                                 continue;
                             }
@@ -368,10 +368,10 @@
     }
 
     /**
-     * 根据路径获取对象属性值（支持数组索引）
-     * @param {object} obj - 对象
-     * @param {string} path - 路径，如 "a.b.0.c"
-     * @returns {any} - 属性值
+     * Получить значение свойства объекта по пути (поддерживаются индексы массивов)
+     * @param {object} obj - Объект
+     * @param {string} path - Путь, например "a.b.0.c"
+     * @returns {any} - Значение свойства
      */
     function getByPath(obj, path) {
         return path.split('.').reduce((acc, part) => {
@@ -381,9 +381,9 @@
     }
 
     /**
-     * 获取当前 URL 对应的站点配置
-     * @param {string} url - 请求 URL
-     * @returns {object|null} - 站点配置对象
+     * Получить конфигурацию сайта для текущего URL
+     * @param {string} url - URL запроса
+     * @returns {object|null} - Объект конфигурации сайта
      */
     function getSiteConfig(url) {
         try {
@@ -408,14 +408,14 @@
         }
     }
 
-    // --- Streaming Response Handler ---
+    // --- Обработчик потокового ответа ---
     async function handleStreamingResponse(response) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let accumulatedText = '';
         let lastSentLength = 0;
 
-        // 创建一个新的可读流来代理原始流
+        // Создать новый читаемый поток, проксирующий исходный
         const stream = new ReadableStream({
             async start(controller) {
                 try {
@@ -424,7 +424,7 @@
                         
                         if (done) {
                             console.log('[MCP Bridge] Stream complete, total length:', accumulatedText.length);
-                            // 流结束时发送最终的完整文本
+                            // По завершении потока отправить итоговый полный текст
                             window.postMessage({
                                 source: MESSAGE_SOURCE,
                                 direction: 'to-content-script',
@@ -435,11 +435,11 @@
                             break;
                         }
 
-                        // 解码当前块
+                        // Декодировать текущий блок
                         const chunk = decoder.decode(value, { stream: true });
                         accumulatedText += chunk;
 
-                        // 每累积一定长度或检测到tool_code标签时发送更新
+                        // Отправлять обновления при накоплении определённой длины или при обнаружении тега tool_code
                         if (accumulatedText.length - lastSentLength > 100 || accumulatedText.includes('</tool_code>')) {
                             window.postMessage({
                                 source: MESSAGE_SOURCE,
@@ -450,7 +450,7 @@
                             lastSentLength = accumulatedText.length;
                         }
 
-                        // 将数据传递给原始消费者
+                        // Передать данные исходному потребителю
                         controller.enqueue(value);
                     }
                 } catch (error) {
@@ -460,7 +460,7 @@
             }
         });
 
-        // 返回一个新的响应对象，使用我们的代理流
+        // Вернуть новый объект Response, использующий наш прокси-поток
         return new Response(stream, {
             headers: response.headers,
             status: response.status,
@@ -468,7 +468,7 @@
         });
     }
 
-    // --- Utility ---
+    // --- Утилиты ---
     function shouldInterceptRequest(url) {
         try {
             const apiList = JSON.parse(localStorage.getItem('mcp_api_list') || '[]');

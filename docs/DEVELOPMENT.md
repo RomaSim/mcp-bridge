@@ -1,174 +1,174 @@
-# MCP Bridge 开发指南
+# Руководство по разработке MCP Bridge
 
-## 目录
+## Содержание
 
-- [开发环境设置](#开发环境设置)
-- [项目结构](#项目结构)
-- [调试技巧](#调试技巧)
-- [添加新平台支持](#添加新平台支持)
-- [开发工作流](#开发工作流)
-- [代码规范](#代码规范)
-- [常见问题](#常见问题)
+- [Настройка среды разработки](#настройка-среды-разработки)
+- [Структура проекта](#структура-проекта)
+- [Приёмы отладки](#приёмы-отладки)
+- [Добавление поддержки новой платформы](#добавление-поддержки-новой-платформы)
+- [Рабочий процесс разработки](#рабочий-процесс-разработки)
+- [Стандарты кода](#стандарты-кода)
+- [Частые вопросы](#частые-вопросы)
 
 ---
 
-## 开发环境设置
+## Настройка среды разработки
 
-### 前置要求
+### Предварительные требования
 
-1. **浏览器**: Chrome/Edge (版本 88+)
-2. **代码编辑器**: VS Code (推荐)
-3. **版本控制**: Git
+1. **Браузер**: Chrome/Edge (версия 88+)
+2. **Редактор кода**: VS Code (рекомендуется)
+3. **Контроль версий**: Git
 
-### 安装开发环境
+### Установка среды разработки
 
-#### 1. 克隆项目
+#### 1. Клонирование проекта
 
 ```bash
 git clone https://github.com/WongJingGitt/mcp_bridge.git
 cd mcp_bridge
 ```
 
-#### 2. 安装浏览器扩展（开发模式）
+#### 2. Установка браузерного расширения (режим разработки)
 
-1. 打开 Chrome，访问 `chrome://extensions/`
-2. 启用右上角的"开发者模式"
-3. 点击"加载已解压的扩展程序"
-4. 选择项目根目录
+1. Откройте Chrome, перейдите по адресу `chrome://extensions/`
+2. Включите «Режим разработчика» в правом верхнем углу
+3. Нажмите «Загрузить распакованное расширение»
+4. Выберите корневой каталог проекта
 
-#### 3. 配置桥接服务
+#### 3. Настройка мостового сервиса
 
-参考 [MCPBridgeServer](https://github.com/WongJingGitt/mcp_bridge_server) 项目的文档。
+Обратитесь к документации проекта [MCPBridgeServer](https://github.com/WongJingGitt/mcp_bridge_server).
 
-#### 4. VS Code 推荐扩展
+#### 4. Рекомендуемые расширения VS Code
 
-安装以下扩展以提升开发体验：
+Установите следующие расширения для улучшения процесса разработки:
 
 ```json
 {
   "recommendations": [
-    "dbaeumer.vscode-eslint",       // JavaScript 代码检查
-    "esbenp.prettier-vscode",        // 代码格式化
-    "ms-vscode.vscode-js-debug",     // JavaScript 调试
-    "christian-kohler.path-intellisense" // 路径自动补全
+    "dbaeumer.vscode-eslint",       // Проверка кода JavaScript
+    "esbenp.prettier-vscode",        // Форматирование кода
+    "ms-vscode.vscode-js-debug",     // Отладка JavaScript
+    "christian-kohler.path-intellisense" // Автодополнение путей
   ]
 }
 ```
 
 ---
 
-## 项目结构
+## Структура проекта
 
 ```
 mcp_bridge/
-├── manifest.json              # 扩展清单文件
+├── manifest.json              # Файл манифеста расширения
 ├── config/
-│   └── api_list.json          # AI 平台配置
+│   └── api_list.json          # Конфигурация ИИ-платформ
 ├── modules/
-│   ├── api_client.js          # 桥接服务 API 客户端
-│   ├── prompt_builder.js      # Prompt 构建器
-│   ├── input_injector.js      # 输入框注入器
-│   └── compareVersion.js      # 版本比较工具
+│   ├── api_client.js          # API-клиент мостового сервиса
+│   ├── prompt_builder.js      # Построитель промптов
+│   ├── input_injector.js      # Инъектор в поле ввода
+│   └── compareVersion.js      # Утилита сравнения версий
 ├── scripts/
-│   ├── background.js          # 后台脚本（核心逻辑）
-│   ├── content_script.js      # 内容脚本（页面交互）
-│   └── page_world/            # 页面世界脚本
-│       ├── injector.js        # 脚本注入器
-│       ├── fetchhook.js       # Fetch 拦截器
-│       └── ajaxhook.min.js    # XHR 拦截器
+│   ├── background.js          # Фоновый скрипт (основная логика)
+│   ├── content_script.js      # Контент-скрипт (взаимодействие со страницей)
+│   └── page_world/            # Скрипты мира страницы
+│       ├── injector.js        # Инъектор скриптов
+│       ├── fetchhook.js       # Перехватчик Fetch
+│       └── ajaxhook.min.js    # Перехватчик XHR
 ├── ui/
-│   ├── status_panel.js        # 状态面板组件
-│   ├── status_panel.css       # 状态面板样式
-│   ├── confirm_dialog.js      # 确认对话框组件
-│   └── confirm_dialog.css     # 确认对话框样式
+│   ├── status_panel.js        # Компонент панели состояния
+│   ├── status_panel.css       # Стили панели состояния
+│   ├── confirm_dialog.js      # Компонент диалога подтверждения
+│   └── confirm_dialog.css     # Стили диалога подтверждения
 ├── options/
-│   ├── options.html           # 设置页面
-│   ├── options.js             # 设置页面逻辑
-│   └── options.css            # 设置页面样式
+│   ├── options.html           # Страница настроек
+│   ├── options.js             # Логика страницы настроек
+│   └── options.css            # Стили страницы настроек
 ├── popup/
-│   ├── popup.html             # 弹出窗口
-│   ├── popup.js               # 弹出窗口逻辑
-│   └── popup.css              # 弹出窗口样式
-└── icons/                     # 图标资源
+│   ├── popup.html             # Всплывающее окно
+│   ├── popup.js               # Логика всплывающего окна
+│   └── popup.css              # Стили всплывающего окна
+└── icons/                     # Ресурсы иконок
 ```
 
-### 核心文件说明
+### Описание основных файлов
 
-| 文件 | 职责 | 修改频率 |
+| Файл | Ответственность | Частота изменений |
 |------|------|----------|
-| `manifest.json` | 扩展配置 | 低 |
-| `config/api_list.json` | 平台配置 | 高（添加新平台） |
-| `scripts/background.js` | 核心业务逻辑 | 中 |
-| `modules/api_client.js` | API 通信 | 低 |
-| `modules/prompt_builder.js` | Prompt 模板 | 中 |
-| `ui/status_panel.js` | UI 组件 | 低 |
+| `manifest.json` | Конфигурация расширения | Низкая |
+| `config/api_list.json` | Конфигурация платформ | Высокая (добавление новых платформ) |
+| `scripts/background.js` | Основная бизнес-логика | Средняя |
+| `modules/api_client.js` | Связь с API | Низкая |
+| `modules/prompt_builder.js` | Шаблоны промптов | Средняя |
+| `ui/status_panel.js` | Компоненты UI | Низкая |
 
 ---
 
-## 调试技巧
+## Приёмы отладки
 
-### 1. 后台脚本调试
+### 1. Отладка фонового скрипта
 
-**步骤**
-1. 访问 `chrome://extensions/`
-2. 找到 MCP Bridge，点击"Service Worker"链接
-3. 打开 DevTools，切换到 Console 标签
+**Шаги**
+1. Перейдите по адресу `chrome://extensions/`
+2. Найдите MCP Bridge, нажмите на ссылку «Service Worker»
+3. Откроется DevTools, переключитесь на вкладку Console
 
-**查看日志**
+**Просмотр логов**
 ```javascript
-// background.js 中的日志会显示在这里
+// Логи из background.js будут отображаться здесь
 console.log('[MCP Bridge] Debug info:', data);
 ```
 
-**断点调试**
-1. 在 DevTools 的 Sources 标签中找到 `background.js`
-2. 设置断点
-3. 触发相应操作
+**Отладка с точками останова**
+1. В DevTools на вкладке Sources найдите `background.js`
+2. Установите точку останова
+3. Выполните соответствующее действие
 
-### 2. 内容脚本调试
+### 2. Отладка контент-скрипта
 
-**步骤**
-1. 在目标页面（如 DeepSeek Chat）打开 DevTools（F12）
-2. 切换到 Console 标签
-3. 过滤日志：输入 `MCP Bridge`
+**Шаги**
+1. На целевой странице (например, DeepSeek Chat) откройте DevTools (F12)
+2. Переключитесь на вкладку Console
+3. Отфильтруйте логи: введите `MCP Bridge`
 
-**查看注入的脚本**
-1. 打开 DevTools → Sources
-2. 展开 `Content scripts`
-3. 查找 `content_script.js`
+**Просмотр внедрённых скриптов**
+1. Откройте DevTools → Sources
+2. Разверните `Content scripts`
+3. Найдите `content_script.js`
 
-### 3. 页面脚本调试
+### 3. Отладка скриптов страницы
 
-**步骤**
-1. 在目标页面打开 DevTools
+**Шаги**
+1. На целевой странице откройте DevTools
 2. Sources → Page → top
-3. 查找 `fetchhook.js` 或 `injector.js`
+3. Найдите `fetchhook.js` или `injector.js`
 
-**断点调试网络拦截**
+**Отладка перехвата сети с точками останова**
 ```javascript
-// fetchhook.js 中设置断点
+// Установите точку останова в fetchhook.js
 window.fetch = new Proxy(originalFetch, {
   apply: async (target, thisArg, args) => {
-    debugger; // 在这里设置断点
+    debugger; // установите точку останова здесь
     // ...
   }
 });
 ```
 
-### 4. 网络请求调试
+### 4. Отладка сетевых запросов
 
-**查看拦截的请求**
+**Просмотр перехваченных запросов**
 1. DevTools → Network
-2. 过滤：输入 AI 平台的 API 路径（如 `/api/v0/chat/completion`）
-3. 查看请求头、请求体、响应
+2. Фильтр: введите путь API ИИ-платформы (например, `/api/v0/chat/completion`)
+3. Просмотрите заголовки, тело запроса, ответ
 
-**查看桥接服务请求**
-1. 过滤：输入 `localhost:3849`
-2. 查看工具调用的请求和响应
+**Просмотр запросов к мостовому сервису**
+1. Фильтр: введите `localhost:3849`
+2. Просмотрите запросы и ответы вызовов инструментов
 
-### 5. 使用 Chrome DevTools Protocol
+### 5. Использование Chrome DevTools Protocol
 
-**高级调试**: 监听所有网络请求
+**Расширенная отладка**: прослушивание всех сетевых запросов
 
 ```javascript
 // background.js
@@ -183,9 +183,9 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 });
 ```
 
-### 6. 日志级别控制
+### 6. Управление уровнем логирования
 
-**环境变量配置**（未来功能）
+**Конфигурация через переменные окружения** (будущая функция)
 ```javascript
 // background.js
 const DEBUG_LEVEL = {
@@ -195,7 +195,7 @@ const DEBUG_LEVEL = {
   DEBUG: 3
 };
 
-let currentLevel = DEBUG_LEVEL.DEBUG; // 开发模式
+let currentLevel = DEBUG_LEVEL.DEBUG; // режим разработки
 
 function log(level, message, data) {
   if (level <= currentLevel) {
@@ -206,105 +206,105 @@ function log(level, message, data) {
 
 ---
 
-## 添加新平台支持
+## Добавление поддержки новой платформы
 
-### 完整步骤指南
+### Полное пошаговое руководство
 
-#### 第一步：分析目标平台
+#### Шаг 1: Анализ целевой платформы
 
-1. **访问目标 AI 平台**（如 Claude Web）
-2. **打开 DevTools → Network**
-3. **发起一次对话，观察网络请求**
+1. **Откройте целевую ИИ-платформу** (например, Claude Web)
+2. **Откройте DevTools → Network**
+3. **Начните диалог, наблюдайте за сетевыми запросами**
 
-**需要找到的信息**
-- API 路径（如 `/api/chat`）
-- 请求方法（通常是 POST）
-- 请求体结构
-- 响应格式（JSON、SSE、Text）
+**Необходимая информация**
+- Путь API (например, `/api/chat`)
+- Метод запроса (обычно POST)
+- Структура тела запроса
+- Формат ответа (JSON, SSE, Text)
 
-#### 第二步：确定关键路径
+#### Шаг 2: Определение ключевых путей
 
-**1. Prompt 注入路径**
+**1. Путь для инъекции промпта**
 
-查看请求体 JSON，找到用户消息的位置。
+Просмотрите JSON тела запроса, найдите местоположение сообщения пользователя.
 
-**示例 1**: 简单路径
+**Пример 1**: простой путь
 ```json
 {
-  "prompt": "用户的消息",  // ← 注入路径: "prompt"
+  "prompt": "Сообщение пользователя",  // ← путь инъекции: "prompt"
   "model": "gpt-4"
 }
 ```
 
-**示例 2**: 嵌套路径
+**Пример 2**: вложенный путь
 ```json
 {
   "messages": [
     {
       "role": "user",
-      "content": "用户的消息"  // ← 注入路径: "messages.0.content"
+      "content": "Сообщение пользователя"  // ← путь инъекции: "messages.0.content"
     }
   ]
 }
 ```
 
-**示例 3**: JSON 字符串字段
+**Пример 3**: поле JSON-строки
 ```json
 {
   "messages": [
     {
-      "content": "{\"text\": \"用户的消息\"}"  // ← 需要解析 JSON 字符串
+      "content": "{\"text\": \"Сообщение пользователя\"}"  // ← требуется разбор JSON-строки
     }
   ]
 }
 ```
-路径: `"messages.0.content.text"`，设置 `isJsonString: true`
+Путь: `"messages.0.content.text"`, установите `isJsonString: true`
 
-**2. 响应内容路径**
+**2. Путь к содержимому ответа**
 
-查看响应数据，找到 AI 回复的位置。
+Просмотрите данные ответа, найдите местоположение ответа ИИ.
 
-**示例 1**: SSE 格式
+**Пример 1**: формат SSE
 ```
-data: {"content": "AI 的回复"}
+data: {"content": "Ответ ИИ"}
 
-data: {"content": "继续回复"}
+data: {"content": "Продолжение ответа"}
 ```
 contentPaths: `["content"]`
 
-**示例 2**: 多层嵌套
+**Пример 2**: многоуровневая вложенность
 ```
-data: {"choices": [{"delta": {"content": "AI 的回复"}}]}
+data: {"choices": [{"delta": {"content": "Ответ ИИ"}}]}
 ```
 contentPaths: `["choices.0.delta.content"]`
 
-**3. 输入框选择器**
+**3. Селектор поля ввода**
 
-在页面上找到输入框元素。
+Найдите элемент поля ввода на странице.
 
-**方法 1**: 使用 DevTools
-1. 点击 Elements 标签左上角的选择工具
-2. 点击输入框
-3. 查看元素的 ID、class、或其他属性
+**Способ 1**:使用 DevTools
+1. Нажмите на инструмент выбора в левом верхнем углу вкладки Elements
+2. Кликните по полю ввода
+3. Просмотрите ID, class или другие атрибуты элемента
 
-**方法 2**: 在 Console 执行
+**Способ 2**: выполните в Console
 ```javascript
-// 测试选择器是否正确
+// Проверьте правильность селектора
 document.querySelector('textarea');
 document.querySelector('#prompt-textarea');
 document.querySelector('[contenteditable="true"]');
 ```
 
-#### 第三步：编写配置
+#### Шаг 3: Написание конфигурации
 
-在 `config/api_list.json` 中添加配置。
+Добавьте конфигурацию в `config/api_list.json`.
 
-**最小配置模板**
+**Минимальный шаблон конфигурации**
 ```json
 {
   "name": "platform_id",
   "hostname": "platform.example.com",
-  "label": "平台名称",
+  "label": "Название платформы",
   "api": ["/api/chat"],
   "promptPath": "prompt",
   "isJsonString": false,
@@ -324,12 +324,12 @@ document.querySelector('[contenteditable="true"]');
 }
 ```
 
-**完整配置模板**（包含可选字段）
+**Полный шаблон конфигурации** (с опциональными полями)
 ```json
 {
   "name": "platform_id",
   "hostname": "platform.example.com",
-  "label": "平台名称",
+  "label": "Название платформы",
   "api": ["/api/chat", "/api/v2/chat"],
   "promptPath": "messages.0.content",
   "isJsonString": false,
@@ -364,15 +364,15 @@ document.querySelector('[contenteditable="true"]');
     "checkExists": false
   },
   "onLoadTip": {
-    "message": ["提示信息第一行", "提示信息第二行"],
-    "dontShowAgainText": "不再提示"
+    "message": ["Первая строка подсказки", "Вторая строка подсказки"],
+    "dontShowAgainText": "Больше не показывать"
   }
 }
 ```
 
-#### 第四步：更新 manifest.json
+#### Шаг 4: Обновление manifest.json
 
-添加新平台的域名到权限列表。
+Добавьте домен новой платформы в список разрешений.
 
 ```json
 {
@@ -396,115 +396,115 @@ document.querySelector('[contenteditable="true"]');
 }
 ```
 
-#### 第五步：测试
+#### Шаг 5: Тестирование
 
-**测试清单**
+**Чек-лист тестирования**
 
-- [ ] 新对话时，System Prompt 是否正确注入？
-  - 打开 DevTools → Network
-  - 发起新对话
-  - 查看请求体是否包含 MCP Prompt
+- [ ] При новом диалоге System Prompt внедряется корректно?
+  - Откройте DevTools → Network
+  - Начните новый диалог
+  - Проверьте, содержит ли тело запроса MCP Prompt
 
-- [ ] 工具调用是否能正确检测？
-  - 让 AI 调用工具（如"列出 filesystem 服务的工具"）
-  - 查看状态面板是否显示"执行中"
+- [ ] Вызов инструмента обнаруживается корректно?
+  - Попросите ИИ вызвать инструмент (например, «выведи список инструментов сервиса filesystem»)
+  - Проверьте, отображает ли панель состояния «Выполняется»
 
-- [ ] 工具结果是否正确反馈？
-  - 工具执行完成后
-  - 输入框是否自动填入结果并发送
+- [ ] Результат инструмента возвращается корректно?
+  - После завершения выполнения инструмента
+  - Автоматически ли заполняется поле ввода результатом и отправляется
 
-- [ ] UI 解析是否正常？
-  - 如果配置了 `uiParsing`
-  - 测试从 DOM 解析是否成功
+- [ ] UI-разбор работает нормально?
+  - Если настроен `uiParsing`
+  - Проверьте успешность разбора из DOM
 
-- [ ] 手动输入是否可用？
-  - 复制包含 `<tool_code>` 的文本
-  - 粘贴到状态面板的输入框
-  - 点击"发送到 MCP"
+- [ ] Ручной ввод доступен?
+  - Скопируйте текст, содержащий `<tool_code>`
+  - Вставьте в поле ввода панели состояния
+  - Нажмите «Отправить в MCP»
 
-#### 第六步：优化配置
+#### Шаг 6: Оптимизация конфигурации
 
-**常见问题与优化**
+**Типичные проблемы и оптимизация**
 
-1. **System Prompt 重复注入**
-   - 问题：每次发送消息都注入
-   - 解决：正确配置 `newConversationFlag`
+1. **Повторная инъекция System Prompt**
+   - Проблема: инъекция при каждой отправке сообщения
+   - Решение: правильно настройте `newConversationFlag`
 
-2. **工具调用检测失败**
-   - 问题：API 解析成功率低
-   - 解决：启用 UI 解析，设置 `priority: "ui"`
+2. **Сбой обнаружения вызова инструмента**
+   - Проблема: низкая успешность API-разбора
+   - Решение: включите UI-разбор, установите `priority: "ui"`
 
-3. **输入框无法自动提交**
-   - 问题：提交键不正确
-   - 解决：尝试不同的 `submitKey` 和 `submitModifiers`
+3. **Поле ввода не отправляется автоматически**
+   - Проблема: неверная клавиша отправки
+   - Решение: попробуйте разные `submitKey` и `submitModifiers`
 
-4. **页面加载慢**
-   - 问题：脚本注入时机过早
-   - 解决：调整 `submitDelay`
+4. **Медленная загрузка страницы**
+   - Проблема: слишком раннее время инъекции скрипта
+   - Решение: настройте `submitDelay`
 
 ---
 
-## 开发工作流
+## Рабочий процесс разработки
 
-### 典型开发流程
+### Типичный процесс разработки
 
 ```
-1. 创建功能分支
+1. Создание ветки функции
    ↓
-2. 修改代码
+2. Изменение кода
    ↓
-3. 重新加载扩展
+3. Перезагрузка расширения
    ↓
-4. 测试功能
+4. Тестирование функции
    ↓
-5. 查看日志/调试
+5. Просмотр логов/отладка
    ↓
-6. 修复问题
+6. Исправление проблем
    ↓
-7. 提交代码
+7. Фиксация кода
    ↓
-8. 创建 Pull Request
+8. Создание Pull Request
 ```
 
-### 热重载技巧
+### Приёмы горячей перезагрузки
 
-**方法 1**: 使用快捷键
-1. 访问 `chrome://extensions/`
-2. 找到 MCP Bridge
-3. 点击刷新图标（或使用快捷键 `Ctrl+R`）
+**Способ 1**: использование горячих клавиш
+1. Перейдите по адресу `chrome://extensions/`
+2. Найдите MCP Bridge
+3. Нажмите значок обновления (или используйте `Ctrl+R`)
 
-**方法 2**: 使用扩展管理工具
-- 安装 [Extensions Reloader](https://chrome.google.com/webstore/detail/extensions-reloader/fimgfedafeadlieiabdeeaodndnlbhid)
-- 一键重载所有扩展
+**Способ 2**: использование менеджера расширений
+- Установите [Extensions Reloader](https://chrome.google.com/webstore/detail/extensions-reloader/fimgfedafeadlieiabdeeaodndnlbhid)
+- Перезагружайте все расширения одним кликом
 
-**方法 3**: 编程式重载
+**Способ 3**: программная перезагрузка
 ```javascript
-// 在 popup.js 或 options.js 中添加重载按钮
+// Добавьте кнопку перезагрузки в popup.js или options.js
 document.getElementById('reloadBtn').addEventListener('click', () => {
   chrome.runtime.reload();
 });
 ```
 
-### 版本管理
+### Управление версиями
 
-**版本号规范**: 遵循语义化版本 (Semantic Versioning)
+**Спецификация номеров версий**: следуйте семантическому версионированию (Semantic Versioning)
 
 ```
 主版本号.次版本号.修订号
 
-1.0.0 → 1.0.1  (修复 bug)
-1.0.1 → 1.1.0  (添加新功能，向后兼容)
-1.1.0 → 2.0.0  (破坏性变更)
+1.0.0 → 1.0.1  (исправление ошибки)
+1.0.1 → 1.1.0  (добавление новой функции, обратная совместимость)
+1.1.0 → 2.0.0  (критические изменения)
 ```
 
-**更新 manifest.json**
+**Обновление manifest.json**
 ```json
 {
   "version": "1.1.0"
 }
 ```
 
-**创建 Git Tag**
+**Создание Git Tag**
 ```bash
 git tag -a v1.1.0 -m "Release version 1.1.0"
 git push origin v1.1.0
@@ -512,38 +512,38 @@ git push origin v1.1.0
 
 ---
 
-## 代码规范
+## Стандарты кода
 
-### JavaScript 编码规范
+### Стандарты кодирования JavaScript
 
-**1. 使用 ES6+ 语法**
+**1. Использование синтаксиса ES6+**
 ```javascript
-// ✅ 推荐
+// ✅ Рекомендуется
 const result = await fetchData();
 const { name, age } = user;
 
-// ❌ 避免
+// ❌ Избегайте
 var result = fetchData().then(...);
 var name = user.name;
 var age = user.age;
 ```
 
-**2. 命名规范**
+**2. Правила именования**
 ```javascript
-// 变量和函数: camelCase
+// Переменные и функции: camelCase
 const userName = 'Alice';
 function getUserData() {}
 
-// 常量: UPPER_SNAKE_CASE
+// Константы: UPPER_SNAKE_CASE
 const API_TIMEOUT = 5000;
 
-// 类: PascalCase
+// Классы: PascalCase
 class StatusPanel {}
 ```
 
-**3. 异步处理**
+**3. Асинхронная обработка**
 ```javascript
-// ✅ 推荐: 使用 async/await
+// ✅ Рекомендуется: async/await
 async function handleRequest() {
   try {
     const data = await fetchData();
@@ -553,7 +553,7 @@ async function handleRequest() {
   }
 }
 
-// ❌ 避免: 回调地狱
+// ❌ Избегайте: ад обратных вызовов
 fetchData(function(data) {
   processData(data, function(result) {
     saveResult(result, function() {
@@ -563,9 +563,9 @@ fetchData(function(data) {
 });
 ```
 
-**4. 错误处理**
+**4. Обработка ошибок**
 ```javascript
-// ✅ 推荐: 详细的错误信息
+// ✅ Рекомендуется: подробная информация об ошибке
 try {
   const result = await executeTool(toolName, args);
 } catch (error) {
@@ -573,31 +573,31 @@ try {
   throw new Error(`工具 ${toolName} 执行失败: ${error.message}`);
 }
 
-// ❌ 避免: 静默失败
+// ❌ Избегайте: молчаливый сбой
 try {
   await executeTool(toolName, args);
 } catch (error) {
-  // 什么都不做
+  // ничего не делаем
 }
 ```
 
-**5. 注释规范**
+**5. Стандарты комментариев**
 ```javascript
 /**
- * 执行 MCP 工具
- * @param {string} toolName - 工具名称
- * @param {Object} args - 工具参数
- * @returns {Promise<any>} - 工具执行结果
- * @throws {Error} - 当工具执行失败时
+ * Выполнить инструмент MCP
+ * @param {string} toolName - имя инструмента
+ * @param {Object} args - параметры инструмента
+ * @returns {Promise<any>} - результат выполнения инструмента
+ * @throws {Error} - при сбое выполнения инструмента
  */
 async function executeTool(toolName, args) {
-  // 实现...
+  // Реализация...
 }
 ```
 
-### JSON 配置规范
+### Стандарты JSON-конфигурации
 
-**1. 使用 2 空格缩进**
+**1. Использование отступа в 2 пробела**
 ```json
 {
   "name": "deepseek",
@@ -607,15 +607,15 @@ async function executeTool(toolName, args) {
 }
 ```
 
-**2. 添加注释**（注意：标准 JSON 不支持注释，但可以在文档中说明）
+**2. Добавление комментариев** (примечание: стандартный JSON не поддерживает комментарии, но можно описать в документации)
 ```javascript
 // config/api_list.json
 [
   {
-    // 平台唯一标识
+    // Уникальный идентификатор платформы
     "name": "deepseek",
     
-    // 域名（不包含协议）
+    // Доменное имя (без протокола)
     "hostname": "chat.deepseek.com",
     
     // ...
@@ -623,9 +623,9 @@ async function executeTool(toolName, args) {
 ]
 ```
 
-### Git 提交规范
+### Стандарты Git-коммитов
 
-**提交消息格式**
+**Формат сообщения коммита**
 ```
 <type>(<scope>): <subject>
 
@@ -634,16 +634,16 @@ async function executeTool(toolName, args) {
 <footer>
 ```
 
-**类型 (type)**
-- `feat`: 新功能
-- `fix`: Bug 修复
-- `docs`: 文档更新
-- `style`: 代码格式调整
-- `refactor`: 重构
-- `test`: 测试相关
-- `chore`: 构建/工具相关
+**Типы (type)**
+- `feat`: новая функция
+- `fix`: исправление ошибки
+- `docs`: обновление документации
+- `style`: корректировка форматирования кода
+- `refactor`: рефакторинг
+- `test`: тестирование
+- `chore`: сборка/инструменты
 
-**示例**
+**Пример**
 ```
 feat(config): add support for Claude Web
 
@@ -656,31 +656,31 @@ Closes #123
 
 ---
 
-## 常见问题
+## Частые вопросы
 
-### Q1: 修改代码后不生效？
+### В1: Изменения в коде не вступают в силу?
 
-**A**: 需要重新加载扩展。
-1. 访问 `chrome://extensions/`
-2. 找到 MCP Bridge，点击刷新图标
-3. 刷新测试页面
+**О**: Необходимо перезагрузить расширение.
+1. Перейдите по адресу `chrome://extensions/`
+2. Найдите MCP Bridge, нажмите значок обновления
+3. Обновите тестовую страницу
 
-### Q2: 无法调试 background.js？
+### В2: Не удаётся отладить background.js?
 
-**A**: Service Worker 可能已停止。
-1. 访问 `chrome://extensions/`
-2. 点击"Service Worker"链接重新启动
-3. 现在可以看到 Console 日志
+**О**: Service Worker мог остановиться.
+1. Перейдите по адресу `chrome://extensions/`
+2. Нажмите на ссылку «Service Worker» для перезапуска
+3. Теперь логи Console будут видны
 
-### Q3: content_script.js 无法访问 window 对象？
+### В3: content_script.js не может получить доступ к объекту window?
 
-**A**: Content Script 运行在隔离环境，无法直接访问页面的 window。
-- 解决：使用 `world: "MAIN"` 注入脚本到页面环境
-- 或者：通过 `window.postMessage` 通信
+**О**: Content Script работает в изолированной среде и не может напрямую обращаться к window страницы.
+- Решение: используйте `world: "MAIN"` для внедрения скрипта в среду страницы
+- Или: общайтесь через `window.postMessage`
 
-### Q4: 如何模拟 SSE 响应测试？
+### В4: Как имитировать SSE-ответ для тестирования?
 
-**A**: 使用 Mock 服务器。
+**О**: Используйте Mock-сервер.
 ```javascript
 // test-server.js
 const express = require('express');
@@ -698,15 +698,15 @@ app.get('/sse', (req, res) => {
 app.listen(3000);
 ```
 
-### Q5: 配置更新后如何生效？
+### В5: Как изменения конфигурации вступают в силу?
 
-**A**: 
-- `api_list.json`: 需要重新加载扩展
-- `mcp-config.json`: 会自动热重载（桥接服务）
+**О**: 
+- `api_list.json`: требуется перезагрузка расширения
+- `mcp-config.json`: горячая перезагрузка происходит автоматически (мостовой сервис)
 
-### Q6: 如何测试多个版本？
+### В6: Как тестировать несколько версий?
 
-**A**: 使用不同的浏览器 Profile。
+**О**: Используйте разные профили браузера.
 ```bash
 # Chrome
 chrome.exe --user-data-dir="C:\temp\chrome-dev"
@@ -715,37 +715,37 @@ chrome.exe --user-data-dir="C:\temp\chrome-dev"
 msedge.exe --user-data-dir="C:\temp\edge-dev"
 ```
 
-### Q7: 性能分析？
+### В7: Анализ производительности?
 
-**A**: 使用 Chrome DevTools Performance 标签。
-1. 打开目标页面的 DevTools
-2. 切换到 Performance
-3. 点击 Record
-4. 执行操作
-5. 停止录制，分析结果
+**О**: Используйте вкладку Performance в Chrome DevTools.
+1. Откройте DevTools целевой страницы
+2. Переключитесь на Performance
+3. Нажмите Record
+4. Выполните действие
+5. Остановите запись, проанализируйте результат
 
 ---
 
-## 进阶主题
+## Продвинутые темы
 
-### 自定义 Prompt 模板
+### Пользовательские шаблоны промптов
 
-编辑 `modules/prompt_builder.js`:
+Отредактируйте `modules/prompt_builder.js`:
 
 ```javascript
 export function buildInitialPrompt(services) {
-  // 自定义你的 Prompt 结构
+  // Настройте структуру вашего промпта
   return `
-你是一个增强版 AI 助手，拥有以下工具:
+Ты — улучшенный ИИ-ассистент, имеющий следующие инструменты:
 ${services.map(s => `- ${s.name}: ${s.description}`).join('\n')}
 
-使用工具时，输出:
+При использовании инструмента выводи:
 <tool_code>{"tool_name": "...", "arguments": {...}}</tool_code>
 `.trim();
 }
 ```
 
-### 添加新的 UI 组件
+### Добавление новых компонентов UI
 
 ```javascript
 // ui/my_component.js
@@ -770,21 +770,21 @@ export class MyComponent {
 }
 ```
 
-### 扩展桥接服务 API
+### Расширение API мостового сервиса
 
-参考 [MCPBridgeServer 开发文档](https://github.com/WongJingGitt/mcp_bridge_server)。
+Обратитесь к [документации разработчика MCPBridgeServer](https://github.com/WongJingGitt/mcp_bridge_server).
 
 ---
 
-## 相关资源
+## Полезные ресурсы
 
-- [Chrome Extension 官方文档](https://developer.chrome.com/docs/extensions/)
-- [Manifest V3 迁移指南](https://developer.chrome.com/docs/extensions/mv3/intro/)
-- [MCP 协议规范](https://modelcontextprotocol.io)
-- [Flask 官方文档](https://flask.palletsprojects.com/)
+- [Официальная документация Chrome Extension](https://developer.chrome.com/docs/extensions/)
+- [Руководство по миграции на Manifest V3](https://developer.chrome.com/docs/extensions/mv3/intro/)
+- [Спецификация протокола MCP](https://modelcontextprotocol.io)
+- [Официальная документация Flask](https://flask.palletsprojects.com/)
 
 ---
 
 **Happy Coding! 🚀**
 
-如有问题，欢迎在 [GitHub Issues](https://github.com/WongJingGitt/mcp_bridge/issues) 提问。
+Если у вас есть вопросы, задайте их в [GitHub Issues](https://github.com/WongJingGitt/mcp_bridge/issues).

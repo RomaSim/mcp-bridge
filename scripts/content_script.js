@@ -1,23 +1,23 @@
 /**
- * content_script.js (Corrected with postMessage)
+ * content_script.js (Исправлено с использованием postMessage)
  */
 
-// TODO(2025-10-26): 元宝BUG：
-//      - 深度思考有概率无限发送消息
-//      - 首条消息判断不生效，始终都是带了完整的Prompt，即使关了
+// TODO(2025-10-26): Баг Yuanbao:
+//      - Глубокое размышление может с некоторой вероятностью бесконечно отправлять сообщения
+//      - Определение первого сообщения не работает: всегда вставляется полный Prompt, даже если это отключено
 
 let statusPanel = null;
 const MESSAGE_SOURCE_INJECTOR = 'mcp-bridge-injector';
 const MESSAGE_SOURCE_CONTENT = 'mcp-bridge-content-script';
 
 async function main() {
-    // 检查当前网站是否在 api_list 中
+    // Проверить, входит ли текущий сайт в api_list
     const currentHostname = window.location.hostname;
     const { api_list = [] } = await chrome.storage.local.get('api_list');
     const currentConfig = api_list.find(item => item.hostname === currentHostname);
 
     if (!currentConfig) {
-        // 仍然监听消息,以便处理注入脚本的通信
+        // Всё равно слушать сообщения, чтобы обрабатывать связь со скриптом внедрения
         window.addEventListener('message', (event) => {
             if (event.source !== window || !event.data) {
                 return;
@@ -34,7 +34,7 @@ async function main() {
             return true;
         });
         
-        return; // 不创建浮窗
+        return; // Не создавать плавающее окно
     }
     
     console.log('[MCP Bridge] Current site is supported, creating panel');
@@ -42,11 +42,11 @@ async function main() {
     const statusPanelModuleUrl = chrome.runtime.getURL('ui/status_panel.js');
     const { StatusPanel } = await import(statusPanelModuleUrl);
 
-    // 立即创建常驻面板
+    // Немедленно создать постоянно присутствующую панель
     statusPanel = new StatusPanel();
-    statusPanel.create(); // 初始化常驻面板
+    statusPanel.create(); // Инициализировать постоянную панель
     
-    // 检查并显示页面加载提示
+    // Проверить и показать подсказку при загрузке страницы
     await checkAndShowOnLoadTip(api_list, currentHostname);
 
     addStyleSheet(currentConfig?.uiParsing || {});
@@ -55,13 +55,13 @@ async function main() {
             return;
         }
         
-        // 处理来自注入脚本的消息
+        // Обработать сообщения от скрипта внедрения
         if (event.data.source === MESSAGE_SOURCE_INJECTOR && event.data.direction === 'to-content-script') {
             handleInjectorMessage(event.data);
             return;
         }
         
-        // 处理来自浮窗面板的消息
+        // Обработать сообщения от панели плавающего окна
         if (event.data.source === 'mcp-bridge-panel') {
             handlePanelMessage(event.data);
             return;
@@ -89,10 +89,10 @@ ${uiConfig.senderSelector} {
 function handleInjectorMessage(data) {
     const { type, payload, requestId } = data;
 
-    // 检查 extension context 是否有效
+    // Проверить, действителен ли контекст расширения
     if (!chrome.runtime?.id) {
 
-        // 如果是请求拦截消息，直接返回原始 body
+        // Если это сообщение перехвата запроса, сразу вернуть исходное тело
         if (requestId) {
             window.postMessage({
                 source: MESSAGE_SOURCE_CONTENT,
@@ -101,23 +101,23 @@ function handleInjectorMessage(data) {
             }, '*');
         }
         
-        // 对于非关键消息（如响应块），提示用户刷新页面
+        // Для некритичных сообщений (например, блоков ответа) предложить пользователю обновить страницу
         if (type === 'XHR_RESPONSE_CHUNK' || type === 'FETCH_RESPONSE_CHUNK' || type === 'XHR_RESPONSE_COMPLETE') {
-            // 检查是否已经显示过提示（避免频繁提示）
+            // Проверить, не показывалось ли уже предупреждение (избежать частых предупреждений)
             const lastWarning = sessionStorage.getItem('mcp_context_warning');
             const now = Date.now();
-            if (!lastWarning || now - parseInt(lastWarning) > 60000) { // 1分钟内只提示一次
+            if (!lastWarning || now - parseInt(lastWarning) > 60000) { // Показывать не чаще раза в минуту
                 sessionStorage.setItem('mcp_context_warning', now.toString());
                 console.error(
-                    '%c[MCP Bridge] 插件已重新加载，请刷新页面以恢复功能',
+                    '%c[MCP Bridge] Расширение было перезагружено, обновите страницу для восстановления работы',
                     'color: #ff0000; font-size: 14px; font-weight: bold;'
                 );
                 
-                // 在浮窗显示错误提示
+                // Показать сообщение об ошибке в плавающем окне
                 if (statusPanel) {
                     statusPanel.update({
                         status: 'ERROR',
-                        message: '插件已重新加载，请刷新页面以恢复功能'
+                        message: 'Расширение было перезагружено, обновите страницу для восстановления работы'
                     });
                 }
             }
@@ -183,12 +183,12 @@ function handleBackgroundMessage(message, sender, sendResponse, StatusPanel) {
             sendResponse({ success: true });
             break;
         case 'INJECT_TEXT_AND_SUBMIT':
-            // 动态导入 input_injector 并执行注入
+            // Динамически импортировать input_injector и выполнить внедрение
             handleTextInjection(payload);
             sendResponse({ success: true });
             break;
         case 'PARSE_UI_CONTENT':
-            // 解析页面 DOM 获取最新消息内容
+            // Разобрать DOM страницы для получения последнего сообщения
             const content = parseUIContent(payload.uiConfig);
             sendResponse({ success: true, content });
             break;
@@ -200,13 +200,13 @@ function handleBackgroundMessage(message, sender, sendResponse, StatusPanel) {
             sendResponse({ success: true });
             break;
     }
-    return true; // 保持异步响应通道开启
+    return true; // Держать канал асинхронного ответа открытым
 }
 
 /**
- * 从页面 DOM 解析最新消息内容（兜底方案）
- * @param {object} uiConfig - UI 解析配置
- * @returns {string} - 解析到的文本内容
+ * Разобрать последнее сообщение из DOM страницы (резервный вариант)
+ * @param {object} uiConfig - Конфигурация UI-разбора
+ * @returns {string} - Разобранное текстовое содержимое
  */
 function parseUIContent(uiConfig) {
     if (!uiConfig || !uiConfig.messageContainer) {
@@ -215,12 +215,12 @@ function parseUIContent(uiConfig) {
     }
 
     try {
-        // 支持单个选择器或多个选择器数组
+        // Поддержка одного селектора или массива селекторов
         const containerSelectors = Array.isArray(uiConfig.messageContainer) 
             ? uiConfig.messageContainer 
             : [uiConfig.messageContainer];
         
-        // 收集所有匹配的容器（来自所有选择器）
+        // Собрать все совпавшие контейнеры (из всех селекторов)
         const allContainers = [];
         
         for (const selector of containerSelectors) {
@@ -235,23 +235,23 @@ function parseUIContent(uiConfig) {
             return '';
         }
         
-        // 去重（同一个元素可能被多个选择器匹配）
+        // Удалить дубликаты (один и тот же элемент может быть найден несколькими селекторами)
         const uniqueContainers = Array.from(new Set(allContainers));
         
-        // 按 DOM 顺序排序（确保获取真正的最后一条消息）
+        // Отсортировать в порядке DOM (чтобы получить真正 последнее сообщение)
         uniqueContainers.sort((a, b) => {
             const position = a.compareDocumentPosition(b);
             if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
-                return -1; // a 在 b 前面
+                return -1; // a перед b
             } else if (position & Node.DOCUMENT_POSITION_PRECEDING) {
-                return 1;  // a 在 b 后面
+                return 1;  // a после b
             }
             return 0;
         });
         
         console.log('[MCP Bridge] parseUIContent: Found', uniqueContainers.length, 'message containers');
 
-        // 获取指定索引的消息容器（支持负数索引）
+        // Получить контейнер сообщения по указанному индексу (поддержка отрицательных индексов)
         const index = uiConfig.messageIndex ?? -1;
         const targetIndex = index < 0 ? uniqueContainers.length + index : index;
         const messageContainer = uniqueContainers[targetIndex];
@@ -261,7 +261,7 @@ function parseUIContent(uiConfig) {
             return '';
         }
 
-        // 如果配置了内容选择器，使用它（也支持数组）
+        // Если настроен селектор содержимого, использовать его (также поддерживается массив)
         let contentElement = messageContainer;
         if (uiConfig.contentSelector) {
             const contentSelectors = Array.isArray(uiConfig.contentSelector)
@@ -269,7 +269,7 @@ function parseUIContent(uiConfig) {
                 : [uiConfig.contentSelector];
             
             for (const selector of contentSelectors) {
-                if (!selector) continue; // 跳过空字符串
+                if (!selector) continue; // Пропустить пустую строку
                 const selected = messageContainer.querySelector(selector);
                 if (selected) {
                     contentElement = selected;
@@ -278,7 +278,7 @@ function parseUIContent(uiConfig) {
             }
         }
 
-        // 提取文本内容
+        // Извлечь текстовое содержимое
         const content = contentElement.innerText || contentElement.textContent || '';
         return content;
     } catch (error) {
@@ -298,24 +298,24 @@ async function handleTextInjection(payload) {
 }
 
 /**
- * 处理来自浮窗面板的消息
+ * Обработать сообщения от панели плавающего окна
  */
 function handlePanelMessage(data) {
     const { type, payload } = data;
 
     switch (type) {
         case 'MCP_BRIDGE_REDETECT_FROM_UI':
-            // 转发重新检测请求到 background
+            // Переслать запрос на повторное обнаружение в background
             chrome.runtime.sendMessage({
                 type: 'REDETECT_FROM_UI'
             }, (response) => {
                 if (chrome.runtime.lastError) {
                     console.error('[MCP Bridge] Failed to send redetect message:', chrome.runtime.lastError);
-                    // 通知浮窗失败
+                    // Уведомить плавающее окно о сбое
                     if (statusPanel) {
                         statusPanel.update({
                             status: 'ERROR',
-                            message: '重新检测失败: ' + chrome.runtime.lastError.message
+                            message: 'Повторное обнаружение не удалось: ' + chrome.runtime.lastError.message
                         });
                     }
                 } else {
@@ -325,18 +325,18 @@ function handlePanelMessage(data) {
             break;
             
         case 'MCP_BRIDGE_MANUAL_TOOL_PARSE':
-            // 转发手动输入请求到 background
+            // Переслать запрос ручного ввода в background
             chrome.runtime.sendMessage({
                 type: 'MANUAL_TOOL_PARSE',
                 payload: payload
             }, (response) => {
                 if (chrome.runtime.lastError) {
                     console.error('[MCP Bridge] Failed to send manual parse message:', chrome.runtime.lastError);
-                    // 通知浮窗失败
+                    // Уведомить плавающее окно о сбое
                     if (statusPanel) {
                         statusPanel.update({
                             status: 'ERROR',
-                            message: '发送失败: ' + chrome.runtime.lastError.message
+                            message: 'Отправка не удалась: ' + chrome.runtime.lastError.message
                         });
                     }
                 } else if (!response?.success) {
@@ -344,7 +344,7 @@ function handlePanelMessage(data) {
                     if (statusPanel) {
                         statusPanel.update({
                             status: 'ERROR',
-                            message: '发送失败: ' + (response?.error || '未知错误')
+                            message: 'Отправка не удалась: ' + (response?.error || 'Неизвестная ошибка')
                         });
                     }
                 }
@@ -357,23 +357,23 @@ function handlePanelMessage(data) {
 }
 
 /**
- * 检查并显示页面加载提示
- * @param {Array} apiList - API 配置列表
- * @param {string} hostname - 当前网站域名
+ * Проверить и показать подсказку при загрузке страницы
+ * @param {Array} apiList - Список конфигураций API
+ * @param {string} hostname - Доменное имя текущего сайта
  */
 async function checkAndShowOnLoadTip(apiList, hostname) {
     try {
-        // 查找当前网站的配置
+        // Найти конфигурацию текущего сайта
         const siteConfig = apiList.find(item => item.hostname === hostname);
         
-        // 如果没有配置 onLoadTip，直接返回
+        // Если onLoadTip не настроен, сразу вернуться
         if (!siteConfig || !siteConfig.onLoadTip) {
             return;
         }
         
         const { onLoadTip } = siteConfig;
         
-        // 检查本地存储，看用户是否选择了"不再提示"
+        // Проверить локальное хранилище: не выбрал ли пользователь "больше не показывать"
         const storageKey = `mcp_bridge_onload_tip_disabled_${hostname}`;
         const isDisabled = localStorage.getItem(storageKey) === 'true';
         
@@ -382,62 +382,62 @@ async function checkAndShowOnLoadTip(apiList, hostname) {
             return;
         }
         
-        // 等待页面完全加载
+        // Подождать полной загрузки страницы
         if (document.readyState !== 'complete') {
             await new Promise(resolve => {
                 window.addEventListener('load', resolve, { once: true });
             });
         }
         
-        // 额外延迟（如果配置了）
+        // Дополнительная задержка (если настроена)
         const delay = onLoadTip.delay || 500;
         await new Promise(resolve => setTimeout(resolve, delay));
         
-        // 处理 message 字段：支持字符串或数组
+        // Обработать поле message: поддержка строки или массива
         let message = '';
         if (Array.isArray(onLoadTip.message)) {
-            // 数组格式：过滤非字符串/数值，然后用换行连接
+            // Формат массива: отфильтровать не-строки/не-числа, затем соединить переносами строк
             message = onLoadTip.message
                 .filter(item => typeof item === 'string' || typeof item === 'number')
                 .map(item => String(item))
                 .join('\n');
         } else {
-            // 字符串格式（兼容旧版本）
+            // Строковый формат (совместимость со старыми версиями)
             message = String(onLoadTip.message || '');
         }
         
-        // 如果处理后消息为空，不显示
+        // Если после обработки сообщение пустое — не показывать
         if (!message.trim()) {
             console.warn('[MCP Bridge] OnLoad tip message is empty after processing');
             return;
         }
         
-        // 动态导入 confirm_dialog
+        // Динамически импортировать confirm_dialog
         const confirmDialogUrl = chrome.runtime.getURL('ui/confirm_dialog.js');
         const { ConfirmDialog } = await import(confirmDialogUrl);
         
         const dialog = new ConfirmDialog();
         
-        // 显示提示对话框
+        // Показать диалог подсказки
         const result = await dialog.show({
-            title: onLoadTip.title || 'MCP Bridge 提示',
+            title: onLoadTip.title || 'MCP Bridge — подсказка',
             message: message,
-            confirmText: onLoadTip.confirmText || '我知道了',
-            cancelText: onLoadTip.cancelText || '关闭',
+            confirmText: onLoadTip.confirmText || 'Понятно',
+            cancelText: onLoadTip.cancelText || 'Закрыть',
             type: onLoadTip.type || 'default',
             showDontShowAgain: true,
-            dontShowAgainText: onLoadTip.dontShowAgainText || '不再提示'
+            dontShowAgainText: onLoadTip.dontShowAgainText || 'Больше не показывать'
         });
         
         console.log('[MCP Bridge] OnLoad tip result:', result);
         
-        // 如果用户勾选了"不再提示"
+        // Если пользователь отметил "больше не показывать"
         if (result && result.dontShowAgain) {
             localStorage.setItem(storageKey, 'true');
             console.log('[MCP Bridge] OnLoad tip disabled by user');
         }
         
-        // 清理对话框
+        // Уничтожить диалог
         dialog.destroy();
         
     } catch (error) {
@@ -446,42 +446,42 @@ async function checkAndShowOnLoadTip(apiList, hostname) {
 }
 
 /**
- * 检查并显示冲突通知
- * @param {string} hostname - 当前网站域名
- * @param {string} conflictExtName - 冲突扩展名（由 background 传入）
+ * Проверить и показать уведомление о конфликте
+ * @param {string} hostname - Доменное имя текущего сайта
+ * @param {string} conflictExtName - Имя конфликтующего расширения (передаётся из background)
  */
 async function checkAndShowConflictNotice(hostname, conflictExtName) {
     try {
-        // 检查是否已关闭过通知
+        // Проверить, не закрывалось ли уже уведомление
         const closedKey = `mcp_bridge_conflict_notice_closed_${hostname}`;
         if (localStorage.getItem(closedKey) === 'true') {
             return;
         }
 
-        // 注入样式
+        // Внедрить стили
         const styleUrl = chrome.runtime.getURL('ui/conflict_notice.css');
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = styleUrl;
         document.head.appendChild(link);
 
-        // 动态导入并创建通知
+        // Динамически импортировать и создать уведомление
         const logoUrl = chrome.runtime.getURL('icons/icon-16.png');
         const noticeUrl = chrome.runtime.getURL('ui/conflict_notice.js');
         const { ConflictNotice } = await import(noticeUrl);
         const notice = new ConflictNotice();
-        notice.create(conflictExtName || '未知扩展', logoUrl);
+        notice.create(conflictExtName || 'Неизвестное расширение', logoUrl);
     } catch (error) {
         console.error('[MCP Bridge] Failed to show conflict notice:', error);
     }
 }
 
-// 确保 DOM 完全加载后再执行
+// Убедиться, что DOM полностью загружен, прежде чем выполнять
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         main().catch(console.error);
     });
 } else {
-    // DOM 已经加载完成
+    // DOM уже загружен
     main().catch(console.error);
 }

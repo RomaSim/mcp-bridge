@@ -1,17 +1,17 @@
 /**
  * Fetch Hook Library
- * 修复版 - 使用 clone() 读取 body，避免消费原始流
+ * Исправленная версия — использует clone() для чтения body, чтобы не потреблять исходный поток
  */
 (function(window) {
-    // 防止重复加载
+    // Защита от повторной загрузки
     if (window.RealFetch) return;
     if (typeof window.fetch !== 'function') return;
 
-    // 保存原始 fetch
+    // Сохранить оригинальный fetch
     window.RealFetch = window.fetch;
 
     /**
-     * Hook Fetch API
+     * Hook для Fetch API
      * @param {Object} hooks - { urlHook, optionsHook, responseHook }
      */
     window.hookFetch = function(hooks) {
@@ -21,20 +21,20 @@
         window.fetch = async function(input, init) {
             let url, options;
 
-            // 处理 Request 对象
+            // Обработка объекта Request
             if (input instanceof Request) {
                 url = input.url;
                 
-                // 读取 body（如果需要修改）
+                // Прочитать body (если нужно модифицировать)
                 let body = null;
                 if (input.body) {
                     try {
-                        // 克隆 Request 来读取 body，避免消费原始流
+                        // Клонировать Request для чтения body, чтобы не потреблять исходный поток
                         const cloned = input.clone();
                         body = await cloned.text();
                     } catch (err) {
                         console.warn('Body read error:', err);
-                        body = input.body; // 降级：使用原始 body
+                        body = input.body; // Запасной вариант: использовать исходный body
                     }
                 } else {
                     body = null;
@@ -43,7 +43,7 @@
                 options = {
                     method: input.method,
                     headers: input.headers,
-                    body: body, // 读取后的文本
+                    body: body, // Прочитанный текст
                     mode: input.mode,
                     credentials: input.credentials,
                     cache: input.cache,
@@ -54,25 +54,25 @@
                     signal: input.signal
                 };
             } else {
-                // 处理普通 URL + init 的情况
+                // Обработка обычного случая URL + init
                 url = input;
                 options = init || {};
             }
 
-            // 执行 URL hook
+            // Выполнить URL hook
             if (typeof hooks.urlHook === 'function') {
                 url = await hooks.urlHook.call(this, url);
             }
 
-            // 执行 options hook
+            // Выполнить options hook
             if (typeof hooks.optionsHook === 'function') {
                 options = await hooks.optionsHook.call(this, options, url);
             }
 
-            // 执行实际的 fetch
+            // Выполнить фактический fetch
             let response = await window.RealFetch(url, options);
 
-            // 执行 response hook
+            // Выполнить response hook
             if (typeof hooks.responseHook === 'function') {
                 return await hooks.responseHook.call(this, response);
             }
@@ -84,7 +84,7 @@
     };
 
     /**
-     * 取消 Hook
+     * Снять Hook
      */
     window.unHookFetch = function() {
         if (window.RealFetch) {
