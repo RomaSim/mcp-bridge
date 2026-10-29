@@ -1,4 +1,4 @@
-/* conflict_notice.css — 冲突通知滑动组件 */
+/* conflict_notice.css — компонент скользящего уведомления о конфликте */
 #mcp-conflict-notice {
     position: fixed;
     bottom: 24px;
@@ -25,7 +25,7 @@
     overflow: hidden;
 }
 
-/* --- 标题栏 --- */
+/* --- Панель заголовка --- */
 .mcp-conflict-notice-header {
     display: flex;
     align-items: center;
@@ -73,7 +73,7 @@
     color: #333;
 }
 
-/* --- 内容区 --- */
+/* --- Область содержимого --- */
 .mcp-conflict-notice-body {
     display: flex;
     align-items: flex-start;

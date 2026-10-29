@@ -1,11 +1,11 @@
 /**
  * confirm_dialog.css
  * 
- * MCP Bridge 确认对话框样式
- * 提供明显的品牌标识和现代化的确认对话框设计
+ * Стили диалога подтверждения MCP Bridge
+ * Обеспечивают явную идентификацию и современный дизайн диалога подтверждения
  */
 
-/* 遮罩层 */
+/* Оверлей */
 .mcp-confirm-overlay {
     position: fixed;
     top: 0;
@@ -28,7 +28,7 @@
     visibility: visible;
 }
 
-/* 对话框主体 */
+/* Основная часть диалога */
 .mcp-confirm-dialog {
     background: #ffffff;
     border-radius: 12px;
@@ -48,14 +48,14 @@
     transform: scale(1);
 }
 
-/* 对话框头部 */
+/* Шапка диалога */
 .mcp-confirm-header {
     padding: 20px 24px 16px;
     border-bottom: 1px solid #e5e7eb;
     background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
 }
 
-/* 品牌标识 */
+/* Брендинг */
 .mcp-confirm-branding {
     display: flex;
     align-items: center;
@@ -76,7 +76,7 @@
     letter-spacing: 0.3px;
 }
 
-/* 标题 */
+/* Заголовок */
 .mcp-confirm-title {
     font-size: 18px;
     font-weight: 600;
@@ -84,7 +84,7 @@
     line-height: 1.4;
 }
 
-/* 对话框内容 */
+/* Содержимое диалога */
 .mcp-confirm-body {
     padding: 20px 24px;
     flex: 1;
@@ -100,7 +100,7 @@
     word-break: break-word;
 }
 
-/* 滚动条样式优化 */
+/* Оптимизация стилей полосы прокрутки */
 .mcp-confirm-body::-webkit-scrollbar {
     width: 8px;
 }
@@ -119,7 +119,7 @@
     background: #94a3b8;
 }
 
-/* 对话框底部 */
+/* Подвал диалога */
 .mcp-confirm-footer {
     padding: 16px 24px;
     border-top: 1px solid #e5e7eb;
@@ -130,7 +130,7 @@
     background: #f9fafb;
 }
 
-/* "不再提示"复选框容器 */
+/* Контейнер флажка «Больше не показывать» */
 .mcp-confirm-dont-show-again {
     display: flex;
     align-items: center;
@@ -157,13 +157,13 @@
     color: #374151;
 }
 
-/* 按钮容器 */
+/* Контейнер кнопок */
 .mcp-confirm-btn-container {
     display: flex;
     gap: 12px;
 }
 
-/* 按钮样式 */
+/* Стили кнопок */
 .mcp-confirm-btn {
     padding: 10px 20px;
     border-radius: 6px;
@@ -182,7 +182,7 @@
     outline-offset: 2px;
 }
 
-/* 取消按钮 */
+/* Кнопка отмены */
 .mcp-confirm-btn-cancel {
     background: #ffffff;
     color: #4b5563;
@@ -198,7 +198,7 @@
     background: #e5e7eb;
 }
 
-/* 确认按钮 */
+/* Кнопка подтверждения */
 .mcp-confirm-btn-confirm {
     background: #0969da;
     color: #ffffff;
@@ -214,7 +214,7 @@
     background: #033d8b;
 }
 
-/* 警告类型 */
+/* Тип «предупреждение» */
 .mcp-confirm-dialog.mcp-confirm-warning .mcp-confirm-header {
     background: linear-gradient(135deg, #fef3c7 0%, #ffffff 100%);
 }
@@ -241,7 +241,7 @@
     outline-color: #f59e0b;
 }
 
-/* 危险类型 */
+/* Тип «опасный» */
 .mcp-confirm-dialog.mcp-confirm-danger .mcp-confirm-header {
     background: linear-gradient(135deg, #fee2e2 0%, #ffffff 100%);
 }
@@ -268,7 +268,7 @@
     outline-color: #ef4444;
 }
 
-/* 响应式设计 */
+/* Адаптивный дизайн */
 @media (max-width: 600px) {
     .mcp-confirm-dialog {
         min-width: 320px;
@@ -284,7 +284,7 @@
     }
 }
 
-/* 暗色主题支持 */
+/* Поддержка тёмной темы */
 @media (prefers-color-scheme: dark) {
     .mcp-confirm-dialog {
         background: #1f2937;

@@ -1,9 +1,9 @@
 /**
  * confirm_dialog.js
  *
- * 职责: 封装通用的确认对话框组件
- * 提供一个明显标识来自 MCP Bridge 的二次确认弹窗
- * 支持自定义标题、消息、按钮文本和回调函数
+ * Назначение: инкапсулирует универсальный компонент диалога подтверждения.
+ * Предоставляет диалог вторичного подтверждения с явной пометкой от MCP Bridge.
+ * Поддерживает настраиваемые заголовок, сообщение, текст кнопок и функции-обработчики.
  */
 
 export class ConfirmDialog {
@@ -15,22 +15,22 @@ export class ConfirmDialog {
     }
 
     /**
-     * 创建对话框
+     * Создать диалог
      */
     create() {
         if (this.hostElement) return;
 
-        // 检查页面上是否已经存在对话框
+        // Проверить, существует ли уже диалог на странице
         const existingHost = document.getElementById('mcp-bridge-confirm-dialog-host');
         if (existingHost) {
             existingHost.remove();
         }
 
-        // 1. 创建宿主元素
+        // 1. Создать корневой элемент
         this.hostElement = document.createElement('div');
         this.hostElement.id = 'mcp-bridge-confirm-dialog-host';
         
-        // 确保 body 已存在
+        // Убедиться, что body существует
         if (!document.body) {
             console.error('[MCP Bridge] document.body is null');
             return;
@@ -38,16 +38,16 @@ export class ConfirmDialog {
         
         document.body.appendChild(this.hostElement);
 
-        // 2. 附加 Shadow DOM
+        // 2. Присоединить Shadow DOM
         this.shadowRoot = this.hostElement.attachShadow({ mode: 'open' });
 
-        // 3. 注入 CSS
+        // 3. Внедрить CSS
         const styleLink = document.createElement('link');
         styleLink.rel = 'stylesheet';
         styleLink.href = chrome.runtime.getURL('ui/confirm_dialog.css');
         this.shadowRoot.appendChild(styleLink);
 
-        // 4. 创建对话框的基本 HTML 结构
+        // 4. Создать базовую HTML-структуру диалога
         const dialog = document.createElement('div');
         dialog.className = 'mcp-confirm-overlay';
         dialog.innerHTML = `
@@ -66,44 +66,44 @@ export class ConfirmDialog {
                 </div>
                 <div class="mcp-confirm-footer">
                     <div class="mcp-confirm-btn-container">
-                        <button class="mcp-confirm-btn mcp-confirm-btn-cancel">取消</button>
-                        <button class="mcp-confirm-btn mcp-confirm-btn-confirm">确认</button>
+                        <button class="mcp-confirm-btn mcp-confirm-btn-cancel">Отмена</button>
+                        <button class="mcp-confirm-btn mcp-confirm-btn-confirm">Подтвердить</button>
                     </div>
                 </div>
             </div>
         `;
         this.shadowRoot.appendChild(dialog);
 
-        // 5. 绑定事件
+        // 5. Привязать события
         this.bindEvents();
     }
 
     /**
-     * 绑定事件
+     * Привязать события
      */
     bindEvents() {
         const overlay = this.shadowRoot.querySelector('.mcp-confirm-overlay');
         const cancelBtn = this.shadowRoot.querySelector('.mcp-confirm-btn-cancel');
         const confirmBtn = this.shadowRoot.querySelector('.mcp-confirm-btn-confirm');
 
-        // 点击遮罩层关闭（可选）
+        // Закрытие по клику на оверлей (опционально)
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) {
                 this.cancel();
             }
         });
 
-        // 取消按钮
+        // Кнопка отмены
         cancelBtn.addEventListener('click', () => {
             this.cancel();
         });
 
-        // 确认按钮
+        // Кнопка подтверждения
         confirmBtn.addEventListener('click', () => {
             this.confirm();
         });
 
-        // ESC 键关闭
+        // Закрытие по клавише ESC
         const handleKeydown = (e) => {
             if (e.key === 'Escape' && this.isVisible) {
                 this.cancel();
@@ -111,28 +111,28 @@ export class ConfirmDialog {
         };
         document.addEventListener('keydown', handleKeydown);
         
-        // 保存引用以便后续移除
+        // Сохранить ссылку для последующего удаления
         this._keydownHandler = handleKeydown;
     }
 
     /**
-     * 显示确认对话框
-     * @param {Object} options - 配置选项
-     * @param {string} options.title - 对话框标题（默认：确认操作）
-     * @param {string} options.message - 对话框消息（必需）
-     * @param {string} options.confirmText - 确认按钮文本（默认：确认）
-     * @param {string} options.cancelText - 取消按钮文本（默认：取消）
-     * @param {string} options.type - 对话框类型：'default', 'warning', 'danger'（默认：default）
-     * @returns {Promise<boolean>} - 用户选择确认返回 true，取消返回 false
+     * Показать диалог подтверждения
+     * @param {Object} options - Опции конфигурации
+     * @param {string} options.title - Заголовок диалога (по умолчанию: Подтверждение действия)
+     * @param {string} options.message - Сообщение диалога (обязательно)
+     * @param {string} options.confirmText - Текст кнопки подтверждения (по умолчанию: Подтвердить)
+     * @param {string} options.cancelText - Текст кнопки отмены (по умолчанию: Отмена)
+     * @param {string} options.type - Тип диалога: 'default', 'warning', 'danger' (по умолчанию: default)
+     * @returns {Promise<boolean>} - true при подтверждении пользователем, false при отмене
      */
     show({
-        title = '确认操作',
+        title = 'Подтверждение действия',
         message = '',
-        confirmText = '确认',
-        cancelText = '取消',
+        confirmText = 'Подтвердить',
+        cancelText = 'Отмена',
         type = 'default',
         showDontShowAgain = false,
-        dontShowAgainText = '不再提示'
+        dontShowAgainText = 'Больше не показывать'
     } = {}) {
         if (!this.hostElement) {
             this.create();
@@ -141,7 +141,7 @@ export class ConfirmDialog {
         return new Promise((resolve) => {
             this.resolveCallback = resolve;
 
-            // 更新内容
+            // Обновить содержимое
             const titleElement = this.shadowRoot.querySelector('.mcp-confirm-title');
             const messageElement = this.shadowRoot.querySelector('.mcp-confirm-message');
             const confirmBtn = this.shadowRoot.querySelector('.mcp-confirm-btn-confirm');
@@ -154,7 +154,7 @@ export class ConfirmDialog {
             confirmBtn.textContent = confirmText;
             cancelBtn.textContent = cancelText;
 
-            // 设置类型样式
+            // Установить стиль типа
             dialog.className = 'mcp-confirm-dialog';
             if (type === 'warning') {
                 dialog.classList.add('mcp-confirm-warning');
@@ -162,7 +162,7 @@ export class ConfirmDialog {
                 dialog.classList.add('mcp-confirm-danger');
             }
 
-            // 处理"不再提示"复选框
+            // Обработать флажок «Больше не показывать»
             let checkboxContainer = footer.querySelector('.mcp-confirm-dont-show-again');
             if (showDontShowAgain) {
                 if (!checkboxContainer) {
@@ -172,7 +172,7 @@ export class ConfirmDialog {
                         <input type="checkbox" class="mcp-confirm-checkbox">
                         <span class="mcp-confirm-checkbox-text">${dontShowAgainText}</span>
                     `;
-                    // 插入到按钮容器之前
+                    // Вставить перед контейнером кнопок
                     const btnContainer = footer.querySelector('.mcp-confirm-btn-container');
                     footer.insertBefore(checkboxContainer, btnContainer);
                 } else {
@@ -186,12 +186,12 @@ export class ConfirmDialog {
                 }
             }
 
-            // 显示对话框
+            // Показать диалог
             const overlay = this.shadowRoot.querySelector('.mcp-confirm-overlay');
             overlay.classList.add('visible');
             this.isVisible = true;
 
-            // 聚焦到确认按钮
+            // Установить фокус на кнопку подтверждения
             setTimeout(() => {
                 confirmBtn.focus();
             }, 100);
@@ -199,7 +199,7 @@ export class ConfirmDialog {
     }
 
     /**
-     * 用户确认
+     * Подтверждение пользователем
      */
     confirm() {
         const result = this.getResult(true);
@@ -211,7 +211,7 @@ export class ConfirmDialog {
     }
 
     /**
-     * 用户取消
+     * Отмена пользователем
      */
     cancel() {
         const result = this.getResult(false);
@@ -223,9 +223,9 @@ export class ConfirmDialog {
     }
 
     /**
-     * 获取对话框结果
-     * @param {boolean} confirmed - 是否确认
-     * @returns {Object|boolean} - 如果有复选框返回对象，否则返回布尔值
+     * Получить результат диалога
+     * @param {boolean} confirmed - Подтверждено ли
+     * @returns {Object|boolean} - Если есть флажок, вернуть объект, иначе — логическое значение
      */
     getResult(confirmed) {
         const checkboxContainer = this.shadowRoot?.querySelector('.mcp-confirm-dont-show-again');
@@ -240,7 +240,7 @@ export class ConfirmDialog {
     }
 
     /**
-     * 隐藏对话框
+     * Скрыть диалог
      */
     hide() {
         if (!this.shadowRoot) return;
@@ -253,7 +253,7 @@ export class ConfirmDialog {
     }
 
     /**
-     * 销毁对话框
+     * Уничтожить диалог
      */
     destroy() {
         if (this._keydownHandler) {
@@ -272,10 +272,10 @@ export class ConfirmDialog {
     }
 }
 
-// 导出一个全局单例实例，方便直接使用
+// Экспортировать глобальный синглтон для удобного использования
 export const confirmDialog = new ConfirmDialog();
 
-// 便捷方法：显示确认对话框
+// Удобный метод: показать диалог подтверждения
 export async function confirm(message, options = {}) {
     return await confirmDialog.show({
         message,
@@ -283,7 +283,7 @@ export async function confirm(message, options = {}) {
     });
 }
 
-// 便捷方法：显示警告类型的确认对话框
+// Удобный метод: показать диалог подтверждения типа «предупреждение»
 export async function confirmWarning(message, options = {}) {
     return await confirmDialog.show({
         message,
@@ -292,12 +292,12 @@ export async function confirmWarning(message, options = {}) {
     });
 }
 
-// 便捷方法：显示危险操作的确认对话框
+// Удобный метод: показать диалог подтверждения для опасных операций
 export async function confirmDanger(message, options = {}) {
     return await confirmDialog.show({
         message,
         type: 'danger',
-        confirmText: '确认删除',
+        confirmText: 'Подтвердить удаление',
         ...options
     });
 }

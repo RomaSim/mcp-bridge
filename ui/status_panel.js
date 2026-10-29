@@ -1,9 +1,9 @@
 /**
  * status_panel.js
  *
- * 职责: 封装“工具调用状态面板”的所有 UI 逻辑。
- * 这是一个独立的类，负责创建、更新和销毁 UI 元素。
- * 它通过 Shadow DOM 实现样式隔离。
+ * Назначение: инкапсулирует всю UI-логику «панели состояния вызова инструментов».
+ * Это независимый класс, отвечающий за создание, обновление и уничтожение UI-элементов.
+ * Изоляция стилей реализована через Shadow DOM.
  */
 
 export class StatusPanel {
@@ -11,23 +11,23 @@ export class StatusPanel {
         this.hostElement = null;
         this.shadowRoot = null;
         this.isVisible = false;
-        this.isExpanded = true; // 默认展开
-        this.isPermanent = true; // 常驻模式
-        this.isMinimized = false; // 最小化状态
-        this.isDragging = false; // 拖拽状态
-        this.dragStarted = false; // 拖拽是否已开始
-        this.dragOffset = { x: 0, y: 0 }; // 拖拽偏移
-        this.position = null; // 自定义位置 {left, top} 或 null
-        this.idleTimer = null; // 闲置计时器
-        this.lastActiveTime = Date.now(); // 最后活跃时间
+        this.isExpanded = true; // По умолчанию развёрнута
+        this.isPermanent = true; // Режим постоянного присутствия
+        this.isMinimized = false; // Состояние свёрнутости
+        this.isDragging = false; // Состояние перетаскивания
+        this.dragStarted = false; // Началось ли перетаскивание
+        this.dragOffset = { x: 0, y: 0 }; // Смещение при перетаскивании
+        this.position = null; // Пользовательская позиция {left, top} или null
+        this.idleTimer = null; // Таймер простоя
+        this.lastActiveTime = Date.now(); // Время последней активности
         
-        // 加载保存的位置和状态
+        // Загрузить сохранённую позицию и состояние
         this.loadPosition();
         this.loadMinimizedState();
     }
     
     /**
-     * 从 localStorage 加载位置
+     * Загрузить позицию из localStorage
      */
     loadPosition() {
         try {
@@ -41,7 +41,7 @@ export class StatusPanel {
     }
     
     /**
-     * 保存位置到 localStorage
+     * Сохранить позицию в localStorage
      */
     savePosition() {
         try {
@@ -54,7 +54,7 @@ export class StatusPanel {
     }
     
     /**
-     * 从 localStorage 加载最小化状态
+     * Загрузить состояние свёрнутости из localStorage
      */
     loadMinimizedState() {
         try {
@@ -68,7 +68,7 @@ export class StatusPanel {
     }
     
     /**
-     * 保存最小化状态到 localStorage
+     * Сохранить состояние свёрнутости в localStorage
      */
     saveMinimizedState() {
         try {
@@ -79,22 +79,22 @@ export class StatusPanel {
     }
 
     /**
-     * 创建并注入状态面板到页面中。
+     * Создать и внедрить панель состояния в страницу.
      */
     create() {
         if (this.hostElement) return;
 
-        // 检查页面上是否已经存在面板（防止重复创建）
+        // Проверить, существует ли уже панель на странице (защита от повторного создания)
         const existingHost = document.getElementById('mcp-bridge-status-panel-host');
         if (existingHost) {
             existingHost.remove();
         }
 
-        // 1. 创建宿主元素
+        // 1. Создать корневой элемент
         this.hostElement = document.createElement('div');
         this.hostElement.id = 'mcp-bridge-status-panel-host';
         
-        // 确保 body 已存在
+        // Убедиться, что body существует
         if (!document.body) {
             console.error('[MCP Bridge] document.body is null, waiting for DOMContentLoaded');
             document.addEventListener('DOMContentLoaded', () => {
@@ -104,16 +104,16 @@ export class StatusPanel {
             document.body.appendChild(this.hostElement);
         }
 
-        // 2. 附加 Shadow DOM
+        // 2. Присоединить Shadow DOM
         this.shadowRoot = this.hostElement.attachShadow({ mode: 'open' });
 
-        // 3. 注入 CSS
+        // 3. Внедрить CSS
         const styleLink = document.createElement('link');
         styleLink.rel = 'stylesheet';
         styleLink.href = chrome.runtime.getURL('ui/status_panel.css');
         this.shadowRoot.appendChild(styleLink);
 
-        // 4. 创建面板的基本 HTML 结构（常驻版本）
+        // 4. Создать базовую HTML-структуру панели (постоянная версия)
         const panel = document.createElement('div');
         panel.className = 'mcp-status-panel permanent';
         panel.innerHTML = `
@@ -123,17 +123,17 @@ export class StatusPanel {
           <span>MCP Bridge</span>
         </div>
         <div class="panel-header-actions">
-          <button class="panel-action-btn minimize-btn" title="最小化">
+          <button class="panel-action-btn minimize-btn" title="Свернуть">
             <svg class="action-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M6 19h12v2H6v-2z" fill="currentColor"/>
             </svg>
           </button>
-          <button class="panel-action-btn redetect-btn" title="重新检测工具调用">
+          <button class="panel-action-btn redetect-btn" title="Повторно обнаружить вызов инструмента">
             <svg class="action-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" fill="currentColor"/>
             </svg>
           </button>
-          <button class="panel-toggle-btn" title="展开/收起">
+          <button class="panel-toggle-btn" title="Развернуть/свернуть">
             <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M7 10l5 5 5-5z" fill="currentColor"/>
             </svg>
@@ -143,34 +143,34 @@ export class StatusPanel {
       <div class="panel-body">
         <div class="status-line">
           <div class="status-icon">⚪</div>
-          <div class="status-text">准备就绪</div>
+          <div class="status-text">Готово</div>
         </div>
-        <button class="show-input-btn" title="显示输入框">
+        <button class="show-input-btn" title="Показать поле ввода">
           <svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
           </svg>
-          <span>手动发送消息</span>
+          <span>Отправить сообщение вручную</span>
         </button>
         <div class="manual-input-section" style="display: none;">
-          <textarea class="manual-input-box" placeholder="如果自动检测失败，可以在此粘贴完整回复内容..." rows="3"></textarea>
-          <button class="manual-send-btn">发送到 MCP</button>
+          <textarea class="manual-input-box" placeholder="Если автоматическое обнаружение не сработало, вставьте сюда полный текст ответа..." rows="3"></textarea>
+          <button class="manual-send-btn">Отправить в MCP</button>
         </div>
       </div>
     `;
         this.shadowRoot.appendChild(panel);
 
-        // 5. 应用保存的最小化状态
+        // 5. Применить сохранённое состояние свёрнутости
         if (this.isMinimized) {
             panel.classList.add('minimized');
         }
 
-        // 6. 应用自定义位置，并检查是否会溢出
+        // 6. Применить пользовательскую позицию и проверить, не приведёт ли она к выходу за пределы экрана
         if (this.position) {
-            // 如果不是最小化状态，检查位置是否会导致溢出
+            // Если это не свёрнутое состояние — проверить, не выйдет ли панель за пределы экрана
             if (!this.isMinimized) {
                 this.adjustPositionOnExpand(panel, this.position);
             } else {
-                // 最小化状态直接应用位置
+                // В свёрнутом состоянии просто применить позицию
                 panel.style.left = this.position.left + 'px';
                 panel.style.top = this.position.top + 'px';
                 panel.style.right = 'auto';
@@ -178,59 +178,59 @@ export class StatusPanel {
             }
         }
 
-        // 7. 绑定事件
+        // 7. Привязать события
         this.bindEvents(panel);
         
-        // 8. 启动闲置检测
+        // 8. Запустить определение простоя
         this.startIdleDetection();
         
-        // 默认显示
+        // Показать по умолчанию
         this.show();
     }
     
     /**
-     * 绑定所有事件
+     * Привязать все события
      */
     bindEvents(panel) {
-        // 最小化按钮
+        // Кнопка сворачивания
         const minimizeBtn = this.shadowRoot.querySelector('.minimize-btn');
         minimizeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.toggleMinimize(true); // 用户主动触发
+            this.toggleMinimize(true); // Пользователь инициировал вручную
         });
         
-        // 展开/收起事件
+        // Событие разворачивания/сворачивания
         const toggleBtn = this.shadowRoot.querySelector('.panel-toggle-btn');
         toggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.toggle();
         });
         
-        // 重新检测按钮事件
+        // Событие кнопки повторного обнаружения
         const redetectBtn = this.shadowRoot.querySelector('.redetect-btn');
         redetectBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.handleRedetect();
         });
         
-        // 显示输入框按钮
+        // Кнопка показа поля ввода
         const showInputBtn = this.shadowRoot.querySelector('.show-input-btn');
         showInputBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.toggleManualInput();
         });
         
-        // 手动发送按钮事件
+        // Событие кнопки ручной отправки
         const manualSendBtn = this.shadowRoot.querySelector('.manual-send-btn');
         manualSendBtn.addEventListener('click', () => this.handleManualSend());
         
-        // 拖拽事件（只在头部有效，不包括按钮）
+        // События перетаскивания (только в области заголовка, не на кнопках)
         const header = this.shadowRoot.querySelector('.panel-header');
         let clickStartTime = 0;
         let clickStartPos = { x: 0, y: 0 };
         
         header.addEventListener('mousedown', (e) => {
-            // 如果点击的是按钮，不触发拖拽
+            // Если кликнули по кнопке — не запускать перетаскивание
             if (e.target.closest('.panel-action-btn') || e.target.closest('.panel-toggle-btn')) {
                 return;
             }
@@ -239,14 +239,14 @@ export class StatusPanel {
             clickStartPos = { x: e.clientX, y: e.clientY };
             this.dragStarted = false;
             
-            // 非最小化状态直接开始拖拽
+            // В не-свёрнутом состоянии сразу начать перетаскивание
             if (!this.isMinimized) {
                 this.startDrag(e);
                 this.dragStarted = true;
             }
         });
         
-        // 监听 mousemove，最小化状态下如果移动超过阈值则开始拖拽
+        // Слушать mousemove: в свёрнутом состоянии, если смещение превысило порог — начать перетаскивание
         const handleMouseMove = (e) => {
             if (this.isMinimized && !this.dragStarted && clickStartTime > 0) {
                 const moveDistance = Math.sqrt(
@@ -254,9 +254,9 @@ export class StatusPanel {
                     Math.pow(e.clientY - clickStartPos.y, 2)
                 );
                 
-                // 移动超过5px，开始拖拽
+                // Смещение больше 5px — начать перетаскивание
                 if (moveDistance > 5) {
-                    // 创建一个模拟事件，使用点击起始位置
+                    // Создать имитацию события, используя начальную позицию клика
                     const simulatedEvent = {
                         clientX: clickStartPos.x,
                         clientY: clickStartPos.y,
@@ -267,7 +267,7 @@ export class StatusPanel {
                 }
             }
             
-            // 继续处理拖拽
+            // Продолжить обработку перетаскивания
             this.onDrag(e);
         };
         
@@ -280,9 +280,9 @@ export class StatusPanel {
                 Math.pow(e.clientY - clickStartPos.y, 2)
             );
             
-            // 如果是最小化状态，且是快速点击（不是拖拽），则展开
+            // Если это свёрнутое состояние и быстрый клик (не перетаскивание) — развернуть
             if (this.isMinimized && clickDuration < 300 && moveDistance < 5 && !this.dragStarted) {
-                this.toggleMinimize(true); // 用户主动触发
+                this.toggleMinimize(true); // Пользователь инициировал вручную
             }
             
             clickStartTime = 0;
@@ -292,13 +292,13 @@ export class StatusPanel {
         
         document.addEventListener('mouseup', handleMouseUp);
         
-        // 活跃检测（鼠标移入）
+        // Определение активности (наведение мыши)
         panel.addEventListener('mouseenter', () => this.markActive());
         panel.addEventListener('mouseleave', () => this.markActive());
     }
     
     /**
-     * 开始拖拽
+     * Начать перетаскивание
      */
     startDrag(e) {
         this.isDragging = true;
@@ -307,14 +307,14 @@ export class StatusPanel {
         
         const rect = panel.getBoundingClientRect();
         
-        // 在最小化状态下，使用面板中心作为拖拽点
+        // В свёрнутом состоянии использовать центр панели как точку захвата
         if (this.isMinimized) {
             this.dragOffset = {
                 x: rect.width / 2,
                 y: rect.height / 2
             };
         } else {
-            // 非最小化状态，使用实际点击位置的偏移
+            // В не-свёрнутом состоянии использовать фактическое смещение точки клика
             this.dragOffset = {
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top
@@ -323,14 +323,14 @@ export class StatusPanel {
         
         this.markActive();
         
-        // 阻止默认行为，防止文本选择
+        // Запретить поведение по умолчанию, чтобы предотвратить выделение текста
         if (e.preventDefault) {
             e.preventDefault();
         }
     }
     
     /**
-     * 拖拽中
+     * Во время перетаскивания
      */
     onDrag(e) {
         if (!this.isDragging) return;
@@ -339,7 +339,7 @@ export class StatusPanel {
         const left = e.clientX - this.dragOffset.x;
         const top = e.clientY - this.dragOffset.y;
         
-        // 边界限制
+        // Ограничение по границам
         const maxLeft = window.innerWidth - panel.offsetWidth;
         const maxTop = window.innerHeight - panel.offsetHeight;
         
@@ -355,7 +355,7 @@ export class StatusPanel {
     }
     
     /**
-     * 停止拖拽
+     * Остановить перетаскивание
      */
     stopDrag() {
         if (!this.isDragging) return;
@@ -364,13 +364,13 @@ export class StatusPanel {
         const panel = this.shadowRoot.querySelector('.mcp-status-panel');
         panel.classList.remove('dragging');
         
-        // 保存位置
+        // Сохранить позицию
         this.savePosition();
     }
     
     /**
-     * 切换最小化
-     * @param {boolean} fromUser - 是否由用户主动触发
+     * Переключить свёрнутость
+     * @param {boolean} fromUser - Инициировано ли пользователем
      */
     toggleMinimize(fromUser = false) {
         const wasMinimized = this.isMinimized;
@@ -382,25 +382,25 @@ export class StatusPanel {
         } else {
             panel.classList.remove('minimized');
             
-            // 从最小化展开时，检查并调整位置防止溢出
+            // При разворачивании из свёрнутого состояния проверить и скорректировать позицию во избежание выхода за экран
             if (wasMinimized && this.position) {
                 this.adjustPositionOnExpand(panel);
             }
         }
         
-        // 保存最小化状态
+        // Сохранить состояние свёрнутости
         this.saveMinimizedState();
         this.markActive();
     }
     
     /**
-     * 展开时调整位置，防止溢出屏幕
-     * @param {HTMLElement} panel - 面板元素
-     * @param {Object} [customPosition] - 可选的自定义位置，如果不提供则使用 this.position
+     * Скорректировать позицию при разворачивании, чтобы избежать выхода за пределы экрана
+     * @param {HTMLElement} panel - Элемент панели
+     * @param {Object} [customPosition] - Необязательная пользовательская позиция; если не указана — используется this.position
      */
     adjustPositionOnExpand(panel, customPosition = null) {
         const EXPANDED_WIDTH = 440;
-        const EXPANDED_MIN_HEIGHT = 200; // 预估的最小高度
+        const EXPANDED_MIN_HEIGHT = 200; // Ожидаемая минимальная высота
         const MARGIN = 20;
         
         const position = customPosition || this.position;
@@ -409,47 +409,47 @@ export class StatusPanel {
         let { left, top } = position;
         let adjusted = false;
         
-        // 检查右侧是否溢出
+        // Проверить выход справа
         const maxLeft = window.innerWidth - EXPANDED_WIDTH - MARGIN;
         if (left > maxLeft) {
             left = Math.max(MARGIN, maxLeft);
             adjusted = true;
         }
         
-        // 检查左侧是否溢出
+        // Проверить выход слева
         if (left < MARGIN) {
             left = MARGIN;
             adjusted = true;
         }
         
-        // 检查底部是否溢出
+        // Проверить выход снизу
         const maxTop = window.innerHeight - EXPANDED_MIN_HEIGHT - MARGIN;
         if (top > maxTop) {
             top = Math.max(MARGIN, maxTop);
             adjusted = true;
         }
         
-        // 检查顶部是否溢出
+        // Проверить выход сверху
         if (top < MARGIN) {
             top = MARGIN;
             adjusted = true;
         }
         
-        // 更新位置（无论是否调整都要应用）
+        // Обновить позицию (применить в любом случае)
         this.position = { left, top };
         panel.style.left = left + 'px';
         panel.style.top = top + 'px';
         panel.style.right = 'auto';
         panel.style.bottom = 'auto';
         
-        // 如果位置被调整，保存
+        // Если позиция была скорректирована — сохранить
         if (adjusted) {
             this.savePosition();
         }
     }
     
     /**
-     * 切换手动输入框显示
+     * Переключить показ поля ручного ввода
      */
     toggleManualInput() {
         const inputSection = this.shadowRoot.querySelector('.manual-input-section');
@@ -458,7 +458,7 @@ export class StatusPanel {
         if (inputSection.style.display === 'none') {
             inputSection.style.display = 'block';
             showBtn.style.display = 'none';
-            // 聚焦到输入框
+            // Установить фокус на поле ввода
             const textarea = inputSection.querySelector('.manual-input-box');
             setTimeout(() => textarea?.focus(), 100);
         } else {
@@ -470,7 +470,7 @@ export class StatusPanel {
     }
     
     /**
-     * 标记活跃
+     * Отметить активность
      */
     markActive() {
         this.lastActiveTime = Date.now();
@@ -481,22 +481,22 @@ export class StatusPanel {
     }
     
     /**
-     * 启动闲置检测
+     * Запустить определение простоя
      */
     startIdleDetection() {
-        // 每 2 秒检查一次
+        // Проверять каждые 2 секунды
         this.idleTimer = setInterval(() => {
             const idleTime = Date.now() - this.lastActiveTime;
             const panel = this.shadowRoot?.querySelector('.mcp-status-panel');
             
-            if (panel && idleTime > 5000 && !this.isMinimized) { // 5秒无操作
+            if (panel && idleTime > 5000 && !this.isMinimized) { // 5 секунд без действий
                 panel.classList.add('idle');
             }
         }, 2000);
     }
     
     /**
-     * 停止闲置检测
+     * Остановить определение простоя
      */
     stopIdleDetection() {
         if (this.idleTimer) {
@@ -506,7 +506,7 @@ export class StatusPanel {
     }
 
     /**
-     * 处理手动发送
+     * Обработать ручную отправку
      */
     handleManualSend() {
         const inputBox = this.shadowRoot.querySelector('.manual-input-box');
@@ -515,50 +515,50 @@ export class StatusPanel {
         if (!content) {
             this.update({
                 status: 'ERROR',
-                message: '请先粘贴内容'
+                message: 'Сначала вставьте содержимое'
             });
             return;
         }
 
-        // 通过 window.postMessage 发送到 content_script
+        // Отправить в content_script через window.postMessage
         window.postMessage({
             type: 'MCP_BRIDGE_MANUAL_TOOL_PARSE',
             source: 'mcp-bridge-panel',
             payload: { content }
         }, '*');
         
-        // 清空输入框并显示处理状态
+        // Очистить поле ввода и показать статус обработки
         inputBox.value = '';
         this.update({
             status: 'EXECUTING',
-            message: '正在处理手动输入的内容...'
+            message: 'Обработка содержимого, введённого вручную...'
         });
     }
 
     /**
-     * 处理重新检测工具调用
+     * Обработать повторное обнаружение вызова инструмента
      */
     handleRedetect() {
         console.log('[MCP Bridge] Redetect button clicked');
         
-        // 显示检测中状态
+        // Показать статус «обнаружение»
         this.update({
             status: 'EXECUTING',
-            message: '正在从最后一条消息重新检测...'
+            message: 'Повторное обнаружение из последнего сообщения...'
         });
         
         console.log('[MCP Bridge] Posting REDETECT_FROM_UI message via window.postMessage');
         
-        // 通过 window.postMessage 发送到 content_script
+        // Отправить в content_script через window.postMessage
         window.postMessage({
             type: 'MCP_BRIDGE_REDETECT_FROM_UI',
             source: 'mcp-bridge-panel'
         }, '*');
     }    /**
-     * 处理刷新 System Prompt (保留用于其他用途)
+     * Обработать обновление System Prompt (сохранено для других целей)
      */
     handleRefresh() {
-        // 发送消息到 background script
+        // Отправить сообщение в background script
         chrome.runtime.sendMessage({ 
             type: 'REFRESH_SYSTEM_PROMPT_FROM_PANEL'
         }).catch(error => {
@@ -567,7 +567,7 @@ export class StatusPanel {
     }
 
     /**
-     * 展开/收起面板
+     * Развернуть/свернуть панель
      */
     toggle() {
         const panel = this.shadowRoot.querySelector('.mcp-status-panel');
@@ -586,11 +586,11 @@ export class StatusPanel {
     }
 
     /**
-     * 显示面板。
+     * Показать панель.
      */
     show() {
         if (!this.hostElement) this.create();
-        // 使用 requestAnimationFrame 确保元素已渲染，从而使 CSS transition 生效
+        // Использовать requestAnimationFrame, чтобы гарантировать, что элемент отрендерен и CSS-transition сработает
         requestAnimationFrame(() => {
             const panel = this.shadowRoot.querySelector('.mcp-status-panel');
             if (panel) {
@@ -601,13 +601,13 @@ export class StatusPanel {
     }
 
     /**
-     * 更新面板内容。
-     * @param {object} state - 包含要显示信息的状态对象。
+     * Обновить содержимое панели.
+     * @param {object} state - Объект состояния с информацией для отображения.
      * @param {string} state.status - 'EXECUTING', 'SUCCESS', 'ERROR', 'IDLE'
-     * @param {string} state.message - 显示在状态行中的主信息。
-     * @param {object} [state.details] - 可选的详细信息。
-     * @param {string} [state.details.title] - 详细信息部分的标题。
-     * @param {string} [state.details.content] - 详细信息的内容 (可以是 JSON 字符串)。
+     * @param {string} state.message - Основная информация, отображаемая в строке статуса.
+     * @param {object} [state.details] - Необязательные подробности.
+     * @param {string} [state.details.title] - Заголовок раздела подробностей.
+     * @param {string} [state.details.content] - Содержимое подробностей (может быть JSON-строкой).
      */
     update({ status, message, details }) {
         if (!this.hostElement) this.create();
@@ -617,15 +617,15 @@ export class StatusPanel {
 
         if (!panel || !panelBody) return;
 
-        // 更新面板的 data-state 属性以应用不同的样式
+        // Обновить атрибут data-state панели для применения разных стилей
         panel.dataset.state = status.toUpperCase();
         
-        // 智能展开：仅在错误时自动展开
+        // Умное разворачивание: автоматически разворачивать только при ошибке
         const isError = status.toUpperCase() === 'ERROR';
         
         if (isError && this.isMinimized) {
             this.markActive();
-            this.toggleMinimize(false); // 自动展开
+            this.toggleMinimize(false); // Автоматическое разворачивание
         }
 
         let iconHtml = '';
@@ -633,7 +633,7 @@ export class StatusPanel {
             case 'EXECUTING':
                 iconHtml = '<div class="spinner"></div>';
                 break;
-            // SUCCESS 和 ERROR 状态的图标由 CSS伪元素 ::before 提供
+            // Иконки для SUCCESS и ERROR предоставляются через CSS-псевдоэлемент ::before
             case 'SUCCESS':
             case 'ERROR':
                 iconHtml = '';
@@ -660,19 +660,19 @@ export class StatusPanel {
         <div class="status-text">${message}</div>
       </div>
       ${detailsHtml}
-      <button class="show-input-btn" title="显示输入框">
+      <button class="show-input-btn" title="Показать поле ввода">
         <svg class="btn-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/>
         </svg>
-        <span>手动发送消息</span>
+        <span>Отправить сообщение вручную</span>
       </button>
       <div class="manual-input-section" style="display: none;">
-        <textarea class="manual-input-box" placeholder="如果自动检测失败，可以在此粘贴完整回复内容..." rows="3"></textarea>
-        <button class="manual-send-btn">发送到 MCP</button>
+        <textarea class="manual-input-box" placeholder="Если автоматическое обнаружение не сработало, вставьте сюда полный текст ответа..." rows="3"></textarea>
+        <button class="manual-send-btn">Отправить в MCP</button>
       </div>
     `;
 
-        // 为新的 details-toggle 元素绑定事件
+        // Привязать событие к новому элементу details-toggle
         const toggle = panelBody.querySelector('.details-toggle');
         if (toggle) {
             toggle.addEventListener('click', () => {
@@ -681,7 +681,7 @@ export class StatusPanel {
             });
         }
         
-        // 重新绑定输入框相关事件
+        // Повторно привязать события к элементам ввода
         const showInputBtn = panelBody.querySelector('.show-input-btn');
         showInputBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -697,22 +697,22 @@ export class StatusPanel {
     }
 
     /**
-     * 销毁并从页面中移除状态面板。
-     * 注意：常驻模式下不应该调用此方法
+     * Уничтожить и удалить панель состояния со страницы.
+     * Примечание: в режиме постоянного присутствия этот метод вызывать не следует.
      */
     destroy() {
         if (this.isPermanent) {
             return;
         }
         
-        // 停止闲置检测
+        // Остановить определение простоя
         this.stopIdleDetection();
         
         if (this.hostElement) {
             const panel = this.shadowRoot.querySelector('.mcp-status-panel');
             if (panel) {
                 panel.classList.remove('visible');
-                // 等待 CSS transition 结束后再移除 DOM 元素
+                // Подождать завершения CSS-transition, затем удалить DOM-элемент
                 setTimeout(() => {
                     this.hostElement.remove();
                     this.hostElement = null;
@@ -726,9 +726,9 @@ export class StatusPanel {
     }
 
     /**
-     * HTML 转义函数，防止 XSS
-     * @param {string} str - 需要转义的字符串
-     * @returns {string} - 转义后的字符串
+     * Функция экранирования HTML для защиты от XSS
+     * @param {string} str - Строка для экранирования
+     * @returns {string} - Экранированная строка
      */
     _escapeHtml(str) {
         if (typeof str !== 'string') return '';

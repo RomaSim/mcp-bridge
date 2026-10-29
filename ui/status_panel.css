@@ -1,6 +1,6 @@
 /*
  * status_panel.css
- * 现代化设计 - 毛玻璃效果、渐变色、流畅动画
+ * Современный дизайн — эффект матового стекла, градиенты, плавные анимации
  */
 
 :host {
@@ -32,9 +32,9 @@
     transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     opacity: 0;
     transform: translateY(20px) scale(0.95);
-    cursor: move; /* 提示可拖拽 */
+    cursor: move; /* Подсказка о возможности перетаскивания */
     
-    /* 防止展开时溢出屏幕 */
+    /* Предотвращение выхода за пределы экрана при разворачивании */
     max-height: calc(100vh - 40px);
 }
 
@@ -43,7 +43,7 @@
     transform: translateY(0) scale(1);
 }
 
-/* 闲置时半透明模式 */
+/* Полупрозрачный режим при простое */
 .mcp-status-panel.idle {
     opacity: 0.5;
     transition: opacity 0.3s ease;
@@ -53,7 +53,7 @@
     opacity: 1;
 }
 
-/* 最小化状态 */
+/* Состояние свёрнутости */
 .mcp-status-panel.minimized {
     width: 64px;
     height: 64px;
@@ -96,7 +96,7 @@
     position: relative;
 }
 
-/* 最小化时的状态环 */
+/* Кольцо состояния в свёрнутом виде */
 .mcp-status-panel.minimized .panel-title::before {
     content: '';
     position: absolute;
@@ -111,18 +111,18 @@
     pointer-events: none;
 }
 
-/* 执行状态的旋转环 */
+/* Вращающееся кольцо в состоянии выполнения */
 .mcp-status-panel.minimized[data-state="EXECUTING"] .panel-title::before {
     border-color: #0969da transparent #0969da transparent;
     animation: rotateRing 1s linear infinite;
 }
 
-/* 成功状态的绿色环 */
+/* Зелёное кольцо в состоянии успеха */
 .mcp-status-panel.minimized[data-state="SUCCESS"] .panel-title::before {
     border-color: #1a7f37;
 }
 
-/* 错误状态的红色环 */
+/* Красное кольцо в состоянии ошибки */
 .mcp-status-panel.minimized[data-state="ERROR"] .panel-title::before {
     border-color: #cf222e;
 }
@@ -145,10 +145,10 @@
     z-index: 1;
 }
 
-/* 拖拽中状态 */
+/* Состояние перетаскивания */
 .mcp-status-panel.dragging {
     cursor: grabbing;
-    transition: none; /* 拖拽时禁用动画 */
+    transition: none; /* Отключить анимацию при перетаскивании */
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15);
 }
 
@@ -158,7 +158,7 @@
     opacity: 0;
 }
 
-/* 头部设计 */
+/* Дизайн заголовка */
 .panel-header {
     display: flex;
     align-items: center;
@@ -264,7 +264,7 @@
     transform: rotate(180deg);
 }
 
-/* 主体区域 */
+/* Основная область */
 .panel-body {
     padding: 18px;
     max-height: 400px;
@@ -291,7 +291,7 @@
     background: rgba(9, 105, 218, 0.35);
 }
 
-/* 状态行 */
+/* Строка состояния */
 .status-line {
     display: flex;
     align-items: flex-start;
@@ -329,7 +329,7 @@
     word-break: break-word;
 }
 
-/* 加载动画 */
+/* Анимация загрузки */
 .spinner {
     width: 20px;
     height: 20px;
@@ -344,7 +344,7 @@
     to { transform: rotate(360deg); }
 }
 
-/* 不同状态的样式 */
+/* Стили для разных состояний */
 .mcp-status-panel[data-state="EXECUTING"] .status-icon {
     color: #0969da;
 }
@@ -393,7 +393,7 @@
     75% { transform: translateX(4px); }
 }
 
-/* 详情区域 */
+/* Область подробностей */
 .details-section {
     margin-top: 14px;
     padding-top: 14px;
@@ -473,7 +473,7 @@
     border-radius: 3px;
 }
 
-/* 暗色模式 */
+/* Тёмный режим */
 @media (prefers-color-scheme: dark) {
     .mcp-status-panel {
         background: linear-gradient(135deg, rgba(22, 27, 34, 0.95) 0%, rgba(13, 17, 23, 0.95) 100%);
@@ -548,14 +548,14 @@
     }
 }
 
-/* 手动输入区域 */
+/* Область ручного ввода */
 .manual-input-section {
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid rgba(31, 35, 40, 0.08);
 }
 
-/* 显示输入框按钮 */
+/* Кнопка показа поля ввода */
 .show-input-btn {
     width: 100%;
     margin-top: 12px;
@@ -644,7 +644,7 @@
     box-shadow: 0 1px 2px rgba(9, 105, 218, 0.2);
 }
 
-/* 暗黑模式下的手动输入区域 */
+/* Область ручного ввода в тёмном режиме */
 @media (prefers-color-scheme: dark) {
     .manual-input-section {
         border-top-color: rgba(48, 54, 61, 0.8);

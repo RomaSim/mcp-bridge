@@ -1,6 +1,6 @@
 /**
  * conflict_notice.js
- * 冲突插件通知组件 — 右下角滑动通知
+ * Компонент уведомления о конфликтующем расширении — выезжающее уведомление в правом нижнем углу
  */
 export class ConflictNotice {
     constructor() {
@@ -19,23 +19,23 @@ export class ConflictNotice {
                         <img class="mcp-conflict-notice-logo" src="${logoUrl}" alt="">
                         <span>MCP Bridge</span>
                     </span>
-                    <button class="mcp-conflict-notice-close" title="关闭">✕</button>
+                    <button class="mcp-conflict-notice-close" title="Закрыть">✕</button>
                 </div>
                 <div class="mcp-conflict-notice-body">
                     <span class="mcp-conflict-notice-icon">⚠️</span>
-                    <span class="mcp-conflict-notice-text">检测到与「${conflictExtName}」扩展冲突，已自动关闭本站首次注入。</span>
+                    <span class="mcp-conflict-notice-text">Обнаружен конфликт с расширением «${conflictExtName}», первое внедрение на этом сайте автоматически отключено.</span>
                 </div>
             </div>
         `;
 
         document.body.appendChild(this.container);
 
-        // 触发滑入动画
+        // Запустить анимацию выезда
         requestAnimationFrame(() => {
             this.container.classList.add('mcp-conflict-notice-visible');
         });
 
-        // 绑定关闭按钮
+        // Привязать кнопку закрытия
         const closeBtn = this.container.querySelector('.mcp-conflict-notice-close');
         closeBtn.addEventListener('click', () => this.destroy());
     }
@@ -54,7 +54,7 @@ export class ConflictNotice {
 
         this.container = null;
 
-        // 记录关闭状态
+        // Записать состояние закрытия
         localStorage.setItem(`mcp_bridge_conflict_notice_closed_${window.location.hostname}`, 'true');
     }
 }
