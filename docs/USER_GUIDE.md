@@ -599,7 +599,7 @@ rm -rf ~/.config/mcp-bridge  # Linux
 
 Мы приветствуем вклад в код или улучшение документации!
 
-Обратитесь к [DEVELOPMENT_RU.md](DEVELOPMENT_RU.md) для ознакомления с процессом разработки.
+Обратитесь к [DEVELOPMENT.md](DEVELOPMENT.md) для ознакомления с процессом разработки.
 
 ---
 

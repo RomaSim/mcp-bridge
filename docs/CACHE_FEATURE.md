@@ -112,4 +112,4 @@
 
 ## Дополнительная информация
 
-Подробная документация API приведена в [MCPBridgeServer README](../../MCPBridgeServer/README_RU.md)
+Подробная документация API приведена в [MCPBridgeServer README](../../MCPBridgeServer/README.md)
