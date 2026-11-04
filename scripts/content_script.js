@@ -1,5 +1,7 @@
 /**
  * content_script.js (Исправлено с использованием postMessage)
+ *
+ * + Передача wrapInToolResult в input_injector для отправки "Продолжи"
  */
 
 // TODO(2025-10-26): Баг Yuanbao:
@@ -22,30 +24,30 @@ async function main() {
             if (event.source !== window || !event.data) {
                 return;
             }
-            
+
             if (event.data.source === MESSAGE_SOURCE_INJECTOR && event.data.direction === 'to-content-script') {
                 handleInjectorMessage(event.data);
                 return;
             }
         });
-        
+
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             handleBackgroundMessage(message, sender, sendResponse, null);
             return true;
         });
-        
+
         return; // Не создавать плавающее окно
     }
-    
+
     console.log('[MCP Bridge] Current site is supported, creating panel');
-    
+
     const statusPanelModuleUrl = chrome.runtime.getURL('ui/status_panel.js');
     const { StatusPanel } = await import(statusPanelModuleUrl);
 
     // Немедленно создать постоянно присутствующую панель
     statusPanel = new StatusPanel();
     statusPanel.create(); // Инициализировать постоянную панель
-    
+
     // Проверить и показать подсказку при загрузке страницы
     await checkAndShowOnLoadTip(api_list, currentHostname);
 
@@ -54,13 +56,13 @@ async function main() {
         if (event.source !== window || !event.data) {
             return;
         }
-        
+
         // Обработать сообщения от скрипта внедрения
         if (event.data.source === MESSAGE_SOURCE_INJECTOR && event.data.direction === 'to-content-script') {
             handleInjectorMessage(event.data);
             return;
         }
-        
+
         // Обработать сообщения от панели плавающего окна
         if (event.data.source === 'mcp-bridge-panel') {
             handlePanelMessage(event.data);
@@ -100,7 +102,7 @@ function handleInjectorMessage(data) {
                 payload: { modifiedBody: payload.body }
             }, '*');
         }
-        
+
         // Для некритичных сообщений (например, блоков ответа) предложить пользователю обновить страницу
         if (type === 'XHR_RESPONSE_CHUNK' || type === 'FETCH_RESPONSE_CHUNK' || type === 'XHR_RESPONSE_COMPLETE') {
             // Проверить, не показывалось ли уже предупреждение (избежать частых предупреждений)
@@ -112,7 +114,7 @@ function handleInjectorMessage(data) {
                     '%c[MCP Bridge] Расширение было перезагружено, обновите страницу для восстановления работы',
                     'color: #ff0000; font-size: 14px; font-weight: bold;'
                 );
-                
+
                 // Показать сообщение об ошибке в плавающем окне
                 if (statusPanel) {
                     statusPanel.update({
@@ -122,7 +124,7 @@ function handleInjectorMessage(data) {
                 }
             }
         }
-        
+
         return;
     }
 
@@ -216,28 +218,28 @@ function parseUIContent(uiConfig) {
 
     try {
         // Поддержка одного селектора или массива селекторов
-        const containerSelectors = Array.isArray(uiConfig.messageContainer) 
-            ? uiConfig.messageContainer 
+        const containerSelectors = Array.isArray(uiConfig.messageContainer)
+            ? uiConfig.messageContainer
             : [uiConfig.messageContainer];
-        
+
         // Собрать все совпавшие контейнеры (из всех селекторов)
         const allContainers = [];
-        
+
         for (const selector of containerSelectors) {
             const found = document.querySelectorAll(selector);
             if (found && found.length > 0) {
                 allContainers.push(...Array.from(found));
             }
         }
-        
+
         if (allContainers.length === 0) {
             console.warn('[MCP Bridge] parseUIContent: No containers found for selectors:', containerSelectors);
             return '';
         }
-        
+
         // Удалить дубликаты (один и тот же элемент может быть найден несколькими селекторами)
         const uniqueContainers = Array.from(new Set(allContainers));
-        
+
         // Отсортировать в порядке DOM (чтобы получить真正 последнее сообщение)
         uniqueContainers.sort((a, b) => {
             const position = a.compareDocumentPosition(b);
@@ -248,7 +250,7 @@ function parseUIContent(uiConfig) {
             }
             return 0;
         });
-        
+
         console.log('[MCP Bridge] parseUIContent: Found', uniqueContainers.length, 'message containers');
 
         // Получить контейнер сообщения по указанному индексу (поддержка отрицательных индексов)
@@ -267,7 +269,7 @@ function parseUIContent(uiConfig) {
             const contentSelectors = Array.isArray(uiConfig.contentSelector)
                 ? uiConfig.contentSelector
                 : [uiConfig.contentSelector];
-            
+
             for (const selector of contentSelectors) {
                 if (!selector) continue; // Пропустить пустую строку
                 const selected = messageContainer.querySelector(selector);
@@ -291,7 +293,9 @@ async function handleTextInjection(payload) {
     try {
         const inputInjectorUrl = chrome.runtime.getURL('modules/input_injector.js');
         const { injectTextAndSubmit } = await import(inputInjectorUrl);
-        await injectTextAndSubmit(payload.text, payload.inputConfig);
+        await injectTextAndSubmit(payload.text, payload.inputConfig, {
+            wrapInToolResult: payload.wrapInToolResult !== false
+        });
     } catch (error) {
         console.error('[MCP Bridge] Failed to inject text:', error);
     }
@@ -323,7 +327,7 @@ function handlePanelMessage(data) {
                 }
             });
             break;
-            
+
         case 'MCP_BRIDGE_MANUAL_TOOL_PARSE':
             // Переслать запрос ручного ввода в background
             chrome.runtime.sendMessage({
@@ -350,7 +354,7 @@ function handlePanelMessage(data) {
                 }
             });
             break;
-            
+
         default:
             console.warn('[MCP Bridge] Unknown panel message type:', type);
     }
@@ -365,34 +369,34 @@ async function checkAndShowOnLoadTip(apiList, hostname) {
     try {
         // Найти конфигурацию текущего сайта
         const siteConfig = apiList.find(item => item.hostname === hostname);
-        
+
         // Если onLoadTip не настроен, сразу вернуться
         if (!siteConfig || !siteConfig.onLoadTip) {
             return;
         }
-        
+
         const { onLoadTip } = siteConfig;
-        
+
         // Проверить локальное хранилище: не выбрал ли пользователь "больше не показывать"
         const storageKey = `mcp_bridge_onload_tip_disabled_${hostname}`;
         const isDisabled = localStorage.getItem(storageKey) === 'true';
-        
+
         if (isDisabled) {
             console.log('[MCP Bridge] OnLoad tip disabled for this site');
             return;
         }
-        
+
         // Подождать полной загрузки страницы
         if (document.readyState !== 'complete') {
             await new Promise(resolve => {
                 window.addEventListener('load', resolve, { once: true });
             });
         }
-        
+
         // Дополнительная задержка (если настроена)
         const delay = onLoadTip.delay || 500;
         await new Promise(resolve => setTimeout(resolve, delay));
-        
+
         // Обработать поле message: поддержка строки или массива
         let message = '';
         if (Array.isArray(onLoadTip.message)) {
@@ -405,19 +409,19 @@ async function checkAndShowOnLoadTip(apiList, hostname) {
             // Строковый формат (совместимость со старыми версиями)
             message = String(onLoadTip.message || '');
         }
-        
+
         // Если после обработки сообщение пустое — не показывать
         if (!message.trim()) {
             console.warn('[MCP Bridge] OnLoad tip message is empty after processing');
             return;
         }
-        
+
         // Динамически импортировать confirm_dialog
         const confirmDialogUrl = chrome.runtime.getURL('ui/confirm_dialog.js');
         const { ConfirmDialog } = await import(confirmDialogUrl);
-        
+
         const dialog = new ConfirmDialog();
-        
+
         // Показать диалог подсказки
         const result = await dialog.show({
             title: onLoadTip.title || 'MCP Bridge — подсказка',
@@ -428,18 +432,18 @@ async function checkAndShowOnLoadTip(apiList, hostname) {
             showDontShowAgain: true,
             dontShowAgainText: onLoadTip.dontShowAgainText || 'Больше не показывать'
         });
-        
+
         console.log('[MCP Bridge] OnLoad tip result:', result);
-        
+
         // Если пользователь отметил "больше не показывать"
         if (result && result.dontShowAgain) {
             localStorage.setItem(storageKey, 'true');
             console.log('[MCP Bridge] OnLoad tip disabled by user');
         }
-        
+
         // Уничтожить диалог
         dialog.destroy();
-        
+
     } catch (error) {
         console.error('[MCP Bridge] Error showing onLoad tip:', error);
     }

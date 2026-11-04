@@ -1,9 +1,11 @@
 /**
  * input_injector.js
- * 
+ *
  * Назначение: интеллектуально внедряет текст в поля ввода на веб-страницах,
  * поддерживает современные фреймворки (React/Vue),
  * вызывая нативные события для обхода ограничений двустороннего связывания фреймворков.
+ *
+ * + Опция wrapInToolResult: при false текст вставляется без обёртки <tool_result>...
  */
 
 /**
@@ -14,14 +16,17 @@
  * @param {string} inputConfig.submitKey - Клавиша отправки (Enter/Tab и т.д.), null означает не отправлять автоматически
  * @param {array} inputConfig.submitModifiers - Модификаторы (Shift/Ctrl/Alt/Meta)
  * @param {number} inputConfig.submitDelay - Общая задержка (мс), по умолчанию 1600 мс
+ * @param {object} options - Дополнительные опции
+ * @param {boolean} options.wrapInToolResult - Оборачивать ли текст в <tool_result> (по умолчанию true)
  * @returns {Promise<boolean>} - Успешно ли выполнено
  */
-export async function injectTextAndSubmit(text, inputConfig) {
+export async function injectTextAndSubmit(text, inputConfig, options = {}) {
     try {
+        const { wrapInToolResult = true } = options;
 
         // Получить общую задержку (по умолчанию 1600 мс)
         const totalDelay = inputConfig.submitDelay || 1600;
-        
+
         // Распределить задержку пропорционально
         // Пропорции: фокус 12.5%, после ввода 31.25%, ожидание UI 50%, после отправки 6.25%
         const delays = {
@@ -36,15 +41,17 @@ export async function injectTextAndSubmit(text, inputConfig) {
         if (!inputElement) {
             throw new Error(`Элемент ввода не найден: ${inputConfig.selector}`);
         }
-        
+
         // Сфокусировать поле ввода
         inputElement.focus();
         await sleep(delays.afterFocus);
-        
-        const finalText = `
+
+        const finalText = wrapInToolResult
+            ? `
 <tool_result>
 ${text}
 </tool_result>`
+            : text;
 
         // Внедрить текст (с поддержкой React/Vue)
         setInputValue(inputElement, finalText);
@@ -120,17 +127,17 @@ function setInputValue(element, value) {
 
     if (isContentEditable) {
         // Элемент contenteditable — использовать более надёжный метод
-        
+
         // Метод 1: сначала очистить, затем вставить (имитация поведения пользователя)
         element.focus();
-        
+
         // Выделить всё содержимое
         const selection = window.getSelection();
         const range = document.createRange();
         range.selectNodeContents(element);
         selection.removeAllRanges();
         selection.addRange(range);
-        
+
         // Вызвать событие beforeinput (современные фреймворки зависят от него)
         element.dispatchEvent(new InputEvent('beforeinput', {
             bubbles: true,
@@ -138,7 +145,7 @@ function setInputValue(element, value) {
             inputType: 'insertText',
             data: value
         }));
-        
+
         // Попробовать использовать execCommand (устарел, но обладает лучшей совместимостью)
         try {
             document.execCommand('insertText', false, value);
@@ -146,13 +153,13 @@ function setInputValue(element, value) {
             // Если execCommand не сработал, использовать операцию с DOM
             element.textContent = value;
         }
-        
+
         // Переместить курсор в конец
         range.selectNodeContents(element);
         range.collapse(false);
         selection.removeAllRanges();
         selection.addRange(range);
-        
+
     } else {
         // textarea или input
         const nativeInputValueSetter = Object.getOwnPropertyDescriptor(

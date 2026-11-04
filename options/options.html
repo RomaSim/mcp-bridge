@@ -59,6 +59,21 @@
                     </div>
                 </div>
 
+                <div class="port-card">
+                    <div class="port-card-info">
+                        <span class="port-card-icon">⏱️</span>
+                        <div>
+                            <div class="port-card-label">Повтор при rate-limit</div>
+                            <div class="port-card-hint">Задержка перед отправкой «Продолжи» и максимальное число попыток</div>
+                        </div>
+                    </div>
+                    <div class="port-card-input">
+                        <input type="number" id="retryDelayMs" min="60000" step="60000" placeholder="300000" title="Задержка, мс" />
+                        <input type="number" id="retryMaxAttempts" min="1" max="20" step="1" placeholder="3" title="Максимум попыток" style="max-width: 80px;" />
+                        <button id="saveRetryDelayButton" class="btn btn-secondary">Сохранить</button>
+                    </div>
+                </div>
+
                 <div class="info-banner">
                     <span>💡 После отключения «Первое авто-внедрение» на этом сайте System Prompt не будет внедряться вовсе. Вы по-прежнему можете внедрить его вручную через плавающее окно.</span>
                 </div>

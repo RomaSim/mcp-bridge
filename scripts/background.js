@@ -1,11 +1,28 @@
 /**
  * background.js (Исправлено с надёжной асинхронной обработкой сообщений)
+ * + Обработка rate-limit DeepSeek с настраиваемой задержкой и лимитом попыток
+ * + Исправление ложных срабатываний tool_code (тихий игнор невалидного JSON)
+ * + Три попытки UI-парсинга (1000/2000/3000 мс) и толерантность к </code>
  */
 
 import * as apiClient from '../modules/api_client.js';
 import * as promptBuilder from '../modules/prompt_builder.js';
 import {getConfig} from "../modules/api_client.js";
 import { detectConflicts } from '../scripts/conflict_detector.js';
+
+// --- Rate-limit retry state ---
+const rateLimitTimers = new Map();    // tabId -> timeoutId
+const rateLimitPending = new Set();   // tabId
+const rateLimitAttempts = new Map();  // tabId -> number (сколько раз уже повторили)
+
+// --- Универсальная регулярка поиска tool call ---
+// Допускает закрывающий тег </tool_code> или </code> (баг DeepSeek иногда выводит </code>)
+const TOOL_CODE_REGEX = /<?\s*tool_code\s*>?([\s\S]*?)<\s*\/\s*(?:tool_code|code)\s*>/;
+
+// --- Вспомогательная задержка ---
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 // --- События жизненного цикла расширения ---
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -30,11 +47,9 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
                 await chrome.tabs.sendMessage(details.tabId, {type: 'STORE_API_LIST', payload: api_list});
             }
             const hostname = new URL(details.url).hostname;
-            // При попадании на AI-сайт запустить проверку конфликтов
             if (api_list?.some(site => site.hostname === hostname)) {
                 detectConflicts();
             }
-            // Уведомление о конфликтном сайте — получить имя расширения из кэша
             if (conflict_disabled_sites.includes(hostname)) {
                 const { conflict_extension_cache } = await chrome.storage.local.get('conflict_extension_cache');
                 let conflictExtName = '';
@@ -53,7 +68,18 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
     }
 });
 
-// --- Прослушивание и маршрутизация сообщений (+++ ключевое исправление: использовать async и try/catch для гарантии ответа +++) ---
+// --- Очистка состояния rate-limit при закрытии вкладки ---
+chrome.tabs.onRemoved.addListener((tabId) => {
+    const timeoutId = rateLimitTimers.get(tabId);
+    if (timeoutId) {
+        clearTimeout(timeoutId);
+        rateLimitTimers.delete(tabId);
+    }
+    rateLimitPending.delete(tabId);
+    rateLimitAttempts.delete(tabId);
+});
+
+// --- Прослушивание и маршрутизация сообщений ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const {type, payload} = message;
 
@@ -68,7 +94,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     case 'XHR_REQUEST_BODY':
                         const response = await handleRequestBody(tabId, payload);
-
                         sendResponse(response);
                         return;
                     case 'FETCH_RESPONSE_CHUNK':
@@ -76,7 +101,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse({success: true});
                         return;
                     case 'XHR_RESPONSE_CHUNK':
-                        // Обработка промежуточного блока потокового ответа
                         await handleResponseChunk(tabId, payload);
                         sendResponse({success: true});
                         return;
@@ -86,7 +110,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         return;
                     case 'XHR_RESPONSE_COMPLETE':
                         await handleResponseComplete(tabId, payload);
-                        sendResponse({success: true}); // Даже если нет возвращаемого значения, подтвердить получение
+                        sendResponse({success: true});
                         return;
                     case 'GET_CONFIG':
                         const config = await apiClient.getConfig();
@@ -97,12 +121,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse(updateResult);
                         return;
                     case 'REDETECT_FROM_UI':
-                        // Повторно определить вызов инструмента из последнего UI-сообщения
                         await handleRedetectFromUI(tabId);
                         sendResponse({ success: true });
                         return;
                     case 'MANUAL_TOOL_PARSE':
-                        // Обработать содержимое, вставленное пользователем вручную
                         await handleManualToolParse(tabId, payload.content);
                         sendResponse({ success: true });
                         return;
@@ -118,7 +140,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         sendResponse(refreshResult);
                         return;
                     case 'REFRESH_SYSTEM_PROMPT_FROM_PANEL':
-                        // Вызвано из панели состояния, нужно получить tabId отправителя
                         if (sender.tab?.id) {
                             const panelRefreshResult = await handleRefreshSystemPrompt(sender.tab.id);
                             sendResponse(panelRefreshResult);
@@ -130,25 +151,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
         } catch (error) {
             console.error(`MCP Bridge: Error handling message type ${type}:`, error);
-            // При любой ошибке вернуть информацию об ошибке, чтобы порт не завис
             sendResponse({error: error.message});
         }
     })();
 
-    return true; // Всегда возвращать true, так как мы всегда обрабатываем асинхронно
+    return true;
 });
 
 /**
  * Обработать тело запроса, изменив его содержимое перед отправкой на сервер
- * @param {number} tabId - ID вкладки браузера
- * @param {Object} payload - Данные полезной нагрузки запроса
- * @param {string} payload.url - URL запроса
- * @param {string} payload.body - Содержимое тела запроса (JSON-строка)
- * @returns {Promise<Object>} Изменённый объект ответа
  */
 async function handleRequestBody(tabId, payload) {
     const {mcp_enabled} = await chrome.storage.local.get('mcp_enabled');
     if (!mcp_enabled) return createResponse(payload.body);
+
+    // Пользователь начал новый запрос — сбросить счётчик и таймер rate-limit
+    if (rateLimitAttempts.has(tabId) || rateLimitPending.has(tabId)) {
+        const timeoutId = rateLimitTimers.get(tabId);
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+            rateLimitTimers.delete(tabId);
+        }
+        rateLimitPending.delete(tabId);
+        rateLimitAttempts.delete(tabId);
+        console.log('[MCP Bridge] User sent new message, resetting rate-limit state for tab', tabId);
+    }
 
     const state = await getTabState(tabId);
     if (state.status === 'FEEDING_BACK') {
@@ -160,10 +187,8 @@ async function handleRequestBody(tabId, payload) {
     const siteConfig = getSiteConfig(payload.url, api_list);
     if (!siteConfig) return createResponse(payload.body);
 
-    // Проверить, нужно ли пропустить модификацию запроса (режим только прослушивания ответа)
     if (siteConfig.skipRequestModification) {
         console.log('[MCP Bridge] Skip request modification, only monitoring response');
-        // Даже если пропускаем модификацию запроса, нужно установить состояние ожидания ответа для обнаружения вызова инструмента
         await setTabState(tabId, {status: 'AWAITING_RESPONSE', currentToolCallKey: null, resultInjected: false});
         return createResponse(payload.body);
     }
@@ -176,39 +201,33 @@ async function handleRequestBody(tabId, payload) {
 
     if (!disable_first_inject[siteConfig.hostname] && !conflict_disabled_sites.includes(siteConfig.hostname) && (isNewConversation || shouldAlwaysInject)) {
         await updateUIPanel(tabId, 'EXECUTING', 'Построение и внедрение MCP Prompt...');
-        const services = await apiClient.getServices(); // Если тут ошибка — она будет перехвачена внешним try/catch
+        const services = await apiClient.getServices();
         const initialPrompt = promptBuilder.buildInitialPrompt(services);
         const reminderPrompt = promptBuilder.buildReminderPrompt();
 
-        // Поддержка одного пути или массива путей
         const promptPaths = Array.isArray(siteConfig.promptPath) ? siteConfig.promptPath : [siteConfig.promptPath];
-        
-        // Внедрить для каждого пути
+
         for (const path of promptPaths) {
-            // Если настроен promptFilter, обязательно должен быть настроен и promptSetFilter
             if (siteConfig.promptFilter && !siteConfig.promptSetFilter) {
                 console.warn('[MCP Bridge] promptFilter is configured but promptSetFilter is missing. Both are required for custom logic.');
             }
-            
+
             const originalPrompt = getByPath(bodyJson, path, siteConfig.isJsonString, siteConfig.promptFilter) || '';
             const finalPrompt = (isNewConversation ? initialPrompt + '\n\n---\n\n' : reminderPrompt + '\n\n---\n\n') + originalPrompt;
             setByPath(bodyJson, path, finalPrompt, siteConfig);
         }
 
         const modifiedBody = JSON.stringify(bodyJson);
-        // Начало нового диалога — очистить предыдущее состояние вызова инструмента
         await setTabState(tabId, {status: 'AWAITING_RESPONSE', currentToolCallKey: null, resultInjected: false});
         return createResponse(modifiedBody);
     }
 
-    // Даже если prompt не внедряется, очистить состояние предыдущего вызова инструмента (новое сообщение пользователя)
-    // Исправление: каждое новое сообщение пользователя должно очищать currentToolCallKey, иначе одинаковые вызовы инструментов будут пропускаться при дедупликации
     await setTabState(tabId, {status: 'AWAITING_RESPONSE', currentToolCallKey: null, resultInjected: false});
     return createResponse(payload.body);
 }
 
 /**
- * Обработать промежуточный блок потокового ответа (обнаружение вызова инструмента)
+ * Обработать промежуточный блок потокового ответа (обнаружение вызова инструмента + rate-limit)
  */
 async function handleResponseChunk(tabId, payload) {
     if (!payload || typeof payload.fullText !== 'string') return;
@@ -216,10 +235,20 @@ async function handleResponseChunk(tabId, payload) {
     const {mcp_enabled} = await chrome.storage.local.get('mcp_enabled');
     if (!mcp_enabled) return;
 
-    // Проверить наличие полного тега вызова инструмента
-    // Высокая отказоустойчивость: начальные и конечные < > необязательны, совместимо со случаями потери символов при разборе SSE
-    // Совпадение: <tool_code> или tool_code> или <tool_code или tool_code
-    const toolCallMatch = payload.fullText.match(/<?\s*tool_code\s*>?([\s\S]*?)<\s*\/\s*tool_code\s*>/);
+    // --- Rate-limit detection ---
+    const rateLimitPattern = /Messages too frequent|Try again later|too many requests/i;
+    if (rateLimitPattern.test(payload.fullText)) {
+        await handleRateLimit(tabId, payload.url);
+        return;
+    }
+
+    // Успешный ответ — сбросить счётчик попыток
+    if (rateLimitAttempts.has(tabId)) {
+        console.log('[MCP Bridge] Successful response, resetting rate-limit attempts for tab', tabId);
+        rateLimitAttempts.delete(tabId);
+    }
+
+    const toolCallMatch = payload.fullText.match(TOOL_CODE_REGEX);
     if (!toolCallMatch) return;
 
     const toolCallJson = parseJsonSafely(toolCallMatch[1]);
@@ -227,23 +256,19 @@ async function handleResponseChunk(tabId, payload) {
 
     console.log('[MCP Bridge] Tool call detected in stream chunk:', toolCallJson);
 
-    // Проверить, не обработан ли уже этот вызов инструмента (во избежание повторного срабатывания)
-    // Использовать содержимое JSON, а не исходную строку, чтобы избежать ложных срабатываний из-за различий в формате
     const state = await getTabState(tabId);
     const toolCallKey = JSON.stringify({ tool_name: toolCallJson.tool_name, arguments: toolCallJson.arguments });
-    
+
     if (state.currentToolCallKey === toolCallKey) {
         console.log('[MCP Bridge] Tool call already processed, skipping');
         return;
     }
-    
-    // Проверить, был ли уже отправлен результат (защита от повторного внедрения)
+
     if (state.resultInjected) {
         console.log('[MCP Bridge] Result already injected, skipping');
         return;
     }
 
-    // Записать текущий вызов инструмента, чтобы избежать повторной обработки
     await setTabState(tabId, { ...state, currentToolCallKey: toolCallKey });
 
     const {tool_name, arguments: args} = toolCallJson;
@@ -267,52 +292,80 @@ async function handleResponseComplete(tabId, payload) {
     const {mcp_enabled, api_list} = await chrome.storage.local.get(['mcp_enabled', 'api_list']);
     if (!mcp_enabled) return;
 
+    // --- Rate-limit detection (final chunk) ---
+    const rateLimitPattern = /Messages too frequent|Try again later|too many requests/i;
+    if (rateLimitPattern.test(payload.fullText)) {
+        await handleRateLimit(tabId, payload.url);
+        return;
+    }
+
+    // Успешное завершение — сбросить счётчик
+    if (rateLimitAttempts.has(tabId)) {
+        rateLimitAttempts.delete(tabId);
+    }
+
     let fullText = payload.fullText;
     const siteConfig = getSiteConfig(payload.url, api_list);
-    
-    // Если настроен UI-разбор, в зависимости от приоритета решить, использовать ли DOM-разбор
+
     if (siteConfig?.uiParsing?.enabled && siteConfig.uiParsing.messageContainer) {
         const uiPriority = siteConfig.uiParsing.priority || 'api';
         let shouldTryUI = false;
         let shouldReplaceText = false;
-        
+
         if (uiPriority === 'ui') {
-            // UI в приоритете: сразу использовать UI-разбор, заменив API-результат
             shouldTryUI = true;
             shouldReplaceText = true;
             console.log('[MCP Bridge] UI parsing priority: using DOM content');
         } else {
-            // API в приоритете: использовать UI-разбор только при сбое API
             shouldTryUI = !fullText || fullText.trim() === '';
             shouldReplaceText = shouldTryUI;
             if (shouldTryUI) {
                 console.log('[MCP Bridge] API parsing failed, falling back to UI parsing');
             }
         }
-        
+
         if (shouldTryUI) {
-            try {
-                const response = await chrome.tabs.sendMessage(tabId, {
-                    type: 'PARSE_UI_CONTENT',
-                    payload: { uiConfig: siteConfig.uiParsing }
-                });
-                
-                if (response?.success && response.content) {
-                    if (shouldReplaceText) {
-                        fullText = response.content;
+            // Три попытки UI-парсинга: через 1000, 2000, 3000 мс.
+            // Если после попытки в тексте уже есть закрывающий тег — дальше не ждём.
+            const delays = [1000, 2000, 3000];
+            let uiContent = '';
+
+            for (let i = 0; i < delays.length; i++) {
+                await sleep(delays[i]);
+                console.log(`[MCP Bridge] UI parsing attempt ${i + 1}/${delays.length} after ${delays[i]} ms`);
+
+                try {
+                    const response = await chrome.tabs.sendMessage(tabId, {
+                        type: 'PARSE_UI_CONTENT',
+                        payload: { uiConfig: siteConfig.uiParsing }
+                    });
+                    if (response?.success && response.content) {
+                        uiContent = response.content;
                     }
+                } catch (error) {
+                    console.error(`[MCP Bridge] Failed to parse UI content (attempt ${i + 1}):`, error);
                 }
-            } catch (error) {
-                console.error('[MCP Bridge] Failed to parse UI content:', error);
+
+                // Если закрывающий тег уже есть — дальше не пытаемся
+                if (uiContent && /<\s*\/\s*(?:tool_code|code)\s*>/.test(uiContent)) {
+                    console.log(`[MCP Bridge] UI parsing succeeded on attempt ${i + 1}`);
+                    break;
+                }
+
+                if (i < delays.length - 1) {
+                    console.log('[MCP Bridge] UI content incomplete, will retry...');
+                }
+            }
+
+            if (shouldReplaceText && uiContent) {
+                fullText = uiContent;
             }
         }
     }
 
-    // Проверить, не обработан ли уже вызов инструмента (во избежание двойной обработки chunk и complete)
     const state = await getTabState(tabId);
-    
-    // Высокая отказоустойчивость: начальные и конечные < > необязательны
-    const toolCallMatch = fullText.match(/<?\s*tool_code\s*>?([\s\S]*?)<\s*\/\s*tool_code\s*>/);
+
+    const toolCallMatch = fullText.match(TOOL_CODE_REGEX);
     if (!toolCallMatch) {
         if (state.status === 'AWAITING_RESPONSE') {
             await updateUIPanel(tabId, 'SUCCESS', 'Ответ завершён, вызовов инструментов не обнаружено.');
@@ -323,30 +376,21 @@ async function handleResponseComplete(tabId, payload) {
     }
 
     const toolCallJson = parseJsonSafely(toolCallMatch[1]);
-    if (!toolCallJson || !toolCallJson.tool_name) {
-        // Отправить сообщение об ошибке модели
-        try {
-            JSON.parse(toolCallMatch[1])
-        } catch (e) {
-            await injectToolResult(tabId, `**Ошибка вызова инструмента!** \n\nСообщение об ошибке:\n\n${e.message}`)
-            // Пометить как внедрённое
-            await setTabState(tabId, { ...state, resultInjected: true });
-        }
-
-        await updateUIPanel(tabId, 'ERROR', 'Модель пыталась вызвать инструмент, но формат неверен.');
+    if (!toolCallJson || typeof toolCallJson !== 'object' || !toolCallJson.tool_name) {
+        // Ложное срабатывание (например, цитата кода в ответе модели) — тихо игнорируем.
+        // НЕ внедряем сообщение об ошибке в чат: модель не просила вызывать инструмент.
+        console.warn('[MCP Bridge] Invalid tool_code JSON, ignoring (likely false positive):',
+            String(toolCallMatch[1]).substring(0, 100));
         return;
     }
 
-    // Использовать содержимое JSON, а не исходную строку, чтобы избежать различий в формате разбора API и UI
     const toolCallKey = JSON.stringify({ tool_name: toolCallJson.tool_name, arguments: toolCallJson.arguments });
-    
-    // Если тот же вызов инструмента уже обработан — просто вернуться
+
     if (state.currentToolCallKey === toolCallKey) {
         console.log('[MCP Bridge] Tool call already processed in chunk handler, skipping complete');
         return;
     }
-    
-    // Если результат уже внедрён, тоже не обрабатывать
+
     if (state.resultInjected) {
         console.log('[MCP Bridge] Result already injected, skipping complete');
         return;
@@ -354,7 +398,6 @@ async function handleResponseComplete(tabId, payload) {
 
     console.log('[MCP Bridge] Parsed tool call:', toolCallJson);
 
-    // Записать текущий вызов инструмента
     await setTabState(tabId, { ...state, currentToolCallKey: toolCallKey });
 
     const {tool_name, arguments: args} = toolCallJson;
@@ -365,31 +408,102 @@ async function handleResponseComplete(tabId, payload) {
     }
 }
 
+/**
+ * Обработать rate-limit: запустить таймер и отправить "Продолжи"
+ */
+async function handleRateLimit(tabId, url) {
+    if (rateLimitPending.has(tabId)) {
+        console.log('[MCP Bridge] Rate limit already pending for tab', tabId);
+        return;
+    }
+
+    const {
+        retry_delay_ms = 300000,
+        retry_max_attempts = 3
+    } = await chrome.storage.local.get(['retry_delay_ms', 'retry_max_attempts']);
+
+    const currentAttempt = (rateLimitAttempts.get(tabId) || 0) + 1;
+
+    if (currentAttempt > retry_max_attempts) {
+        console.warn(`[MCP Bridge] Rate limit retry limit reached (${retry_max_attempts}) for tab ${tabId}`);
+        rateLimitAttempts.delete(tabId);
+        await updateUIPanel(tabId, 'ERROR',
+            `Достигнут лимит повторов (${retry_max_attempts}). DeepSeek всё ещё ограничивает запросы. Попробуйте позже вручную.`);
+        return;
+    }
+
+    rateLimitAttempts.set(tabId, currentAttempt);
+    console.log(`[MCP Bridge] Rate limit detected, attempt ${currentAttempt}/${retry_max_attempts}, retry in ${retry_delay_ms} ms`);
+
+    await updateUIPanel(tabId, 'ERROR',
+        `Обнаружен rate-limit DeepSeek. Попытка ${currentAttempt}/${retry_max_attempts}, повтор через ${Math.round(retry_delay_ms / 1000)} сек...`);
+
+    rateLimitPending.add(tabId);
+
+    const timeoutId = setTimeout(async () => {
+        rateLimitTimers.delete(tabId);
+        rateLimitPending.delete(tabId);
+        await sendContinueMessage(tabId);
+    }, retry_delay_ms);
+
+    rateLimitTimers.set(tabId, timeoutId);
+}
+
+/**
+ * Отправить "Продолжи" в чат DeepSeek
+ */
+async function sendContinueMessage(tabId) {
+    try {
+        const {api_list, auto_submit_prompt = true} = await chrome.storage.local.get(['api_list', 'auto_submit_prompt']);
+        const currentHostname = await getCurrentHostname(tabId);
+        const siteConfig = api_list?.find(site => site.hostname === currentHostname);
+
+        if (!siteConfig || !siteConfig.input) {
+            console.error('[MCP Bridge] No input config for continue message:', currentHostname);
+            return;
+        }
+
+        await updateUIPanel(tabId, 'EXECUTING', 'Отправка "Продолжи" после rate-limit...');
+
+        await chrome.tabs.sendMessage(tabId, {
+            type: 'INJECT_TEXT_AND_SUBMIT',
+            payload: {
+                text: 'Продолжи',
+                inputConfig: {
+                    ...siteConfig.input,
+                    submitKey: auto_submit_prompt ? siteConfig.input.submitKey : null
+                },
+                wrapInToolResult: false
+            }
+        });
+
+        await updateUIPanel(tabId, 'SUCCESS', '"Продолжи" отправлено');
+    } catch (error) {
+        console.error('[MCP Bridge] Failed to send continue message:', error);
+        await updateUIPanel(tabId, 'ERROR', 'Не удалось отправить "Продолжи": ' + error.message);
+    }
+}
+
 async function handleListTools(tabId, serviceName) {
     try {
         await updateUIPanel(tabId, 'EXECUTING', `Запрос инструментов сервиса <strong>${serviceName}</strong>...`);
         const response = await apiClient.getToolsByServer(serviceName);
-        
-        // Сервер теперь возвращает { service_name, service_description, tools: [...] }
+
         const serviceDescription = response.service_description || '';
         const tools = response.tools || [];
-        
-        // Построить JSON-массив списка инструментов
+
         const toolsData = tools.map(t => ({
             name: t.name,
             description: t.description,
             parameters: t.parameters || {}
         }));
-        
-        // Включить описание сервиса в возвращаемый результат
+
         const resultText = `Информация о сервисе "${serviceName}":\n\n**Описание сервиса**: ${serviceDescription}\n\n**Список инструментов**:\n\`\`\`json\n${JSON.stringify(toolsData, null, 2)}\n\`\`\``;
-        
+
         await updateUIPanel(tabId, 'SUCCESS', `Список инструментов получен, передача модели...`);
-        
-        // Использовать умное внедрение вместо перезагрузки страницы
+
         await injectToolResult(tabId, resultText);
-        
-        // Пометить результат как внедрённый, чтобы избежать повторной отправки, но сохранить currentToolCall
+
         const state = await getTabState(tabId);
         await setTabState(tabId, { ...state, resultInjected: true });
     } catch (error) {
@@ -399,7 +513,6 @@ async function handleListTools(tabId, serviceName) {
 
 async function handleExecuteTool(tabId, toolName, args) {
     try {
-        // Специальная обработка: инструменты, связанные с кэшем
         if (toolName === 'get_cached_result') {
             await handleGetCachedResult(tabId, args);
             return;
@@ -412,19 +525,17 @@ async function handleExecuteTool(tabId, toolName, args) {
             await handleGetCacheContext(tabId, args);
             return;
         }
-        
+
         await updateUIPanel(tabId, 'EXECUTING', `Выполнение инструмента: <strong>${toolName}</strong>...`, {
             title: 'Параметры',
             content: JSON.stringify(args, null, 2)
         });
         const result = await apiClient.executeTool(toolName, args);
-        
-        // Проверить, является ли это ссылкой на кэш
+
         if (result.result_type === 'cached_reference') {
-            // Использовать новую функцию форматирования для ссылки на кэш
             const resultText = promptBuilder.formatCachedResultForModel(toolName, result);
-            
-            await updateUIPanel(tabId, 'SUCCESS', 
+
+            await updateUIPanel(tabId, 'SUCCESS',
                 `Инструмент выполнен успешно, результат закэширован (${(result.total_size/1024).toFixed(2)} КБ)`, {
                 title: 'Информация о кэше',
                 content: JSON.stringify({
@@ -433,21 +544,19 @@ async function handleExecuteTool(tabId, toolName, args) {
                     total_size: result.total_size
                 }, null, 2)
             });
-            
+
             await injectToolResult(tabId, resultText);
         } else {
-            // Прежняя логика: прямой результат
             const resultText = promptBuilder.formatToolResultForModel(toolName, result);
-            
+
             await updateUIPanel(tabId, 'SUCCESS', `Инструмент выполнен успешно, передача модели...`, {
                 title: 'Результат',
                 content: JSON.stringify(result, null, 2)
             });
-            
+
             await injectToolResult(tabId, resultText);
         }
-        
-        // Пометить результат как внедрённый, чтобы избежать повторной отправки, но сохранить currentToolCall
+
         const state = await getTabState(tabId);
         await setTabState(tabId, { ...state, resultInjected: true });
     } catch (error) {
@@ -456,32 +565,26 @@ async function handleExecuteTool(tabId, toolName, args) {
     }
 }
 
-/**
- * Обработать вызов инструмента получения кэшированного результата
- */
 async function handleGetCachedResult(tabId, args) {
     try {
         const { cache_id, start, end } = args;
-        
+
         if (!cache_id) {
             throw new Error('Отсутствует обязательный параметр: cache_id');
         }
-        
-        await updateUIPanel(tabId, 'EXECUTING', 
+
+        await updateUIPanel(tabId, 'EXECUTING',
             `Получение содержимого кэша... ${start !== undefined ? `(${start}-${end || 'конец'})` : '(полное)'}`);
-        
+
         const result = await apiClient.getCachedResult(cache_id, start, end);
-        
-        // Форматировать результат для возврата модели
+
         const hasMore = result.metadata.has_more || false;
         const actualStart = result.metadata.start || start || 0;
         const actualEnd = result.metadata.end || end || result.metadata.total_length;
         const totalLength = result.metadata.total_length || 'неизвестно';
-        
-        // Вычислить количество полученных символов
+
         const fetchedCount = actualEnd - actualStart;
-        
-        // Форматировать содержимое: если это объект, сериализовать в JSON
+
         let contentStr;
         if (typeof result.content === 'string') {
             contentStr = result.content;
@@ -490,12 +593,11 @@ async function handleGetCachedResult(tabId, args) {
         } else {
             contentStr = String(result.content);
         }
-        
-        // Вычислить число строк содержимого (если это строка)
-        const contentLines = typeof result.content === 'string' 
-            ? result.content.split('\n').length 
+
+        const contentLines = typeof result.content === 'string'
+            ? result.content.split('\n').length
             : (Array.isArray(result.content) ? result.content.length : 1);
-        
+
         const resultText = `
 # Результат получения содержимого кэша
 
@@ -526,53 +628,47 @@ ${hasMore ? `
 \`\`\`
 ` : ''}
 `.trim();
-        
-        await updateUIPanel(tabId, 'SUCCESS', 
+
+        await updateUIPanel(tabId, 'SUCCESS',
             `Содержимое кэша получено (${actualStart}-${actualEnd}/${totalLength})`);
-        
+
         await injectToolResult(tabId, resultText);
-        
+
         const state = await getTabState(tabId);
         await setTabState(tabId, { ...state, resultInjected: true });
-        
+
     } catch (error) {
         console.error('[MCP Bridge] Get cached result error:', error);
-        
-        // Специальная обработка ошибки истечения кэша
+
         let errorMessage = error.message;
         if (errorMessage.includes('不存在') || errorMessage.includes('过期') || errorMessage.includes('404')) {
             errorMessage = `Кэш истёк или не существует. Срок жизни кэша составляет 5 минут, возможно, он уже истёк. Рекомендуется повторно выполнить исходный инструмент для получения актуальных данных.`;
         }
-        
+
         await handleToolError(tabId, 'get_cached_result', new Error(errorMessage));
     }
 }
 
-/**
- * Обработать вызов инструмента поиска в кэше
- */
 async function handleSearchCachedResult(tabId, args) {
     try {
         const { cache_id, keyword, case_sensitive = false, max_results = 50 } = args;
-        
+
         if (!cache_id || !keyword) {
             throw new Error('Отсутствуют обязательные параметры: cache_id или keyword');
         }
-        
+
         await updateUIPanel(tabId, 'EXECUTING', `Поиск ключевого слова "${keyword}"...`);
-        
+
         const result = await apiClient.searchCachedResult(cache_id, keyword, case_sensitive, max_results);
-        
-        // Форматировать результаты поиска
+
         const matchCount = result.total_matches;
         const truncated = result.truncated;
-        
-        // Ограничить отображение первыми 20 результатами
+
         const displayMatches = result.matches.slice(0, 20);
-        const matchList = displayMatches.map(m => 
+        const matchList = displayMatches.map(m =>
             `- Строка ${m.line}, столбец ${m.column}: ${m.content}`
         ).join('\n');
-        
+
         const resultText = `
 # Результаты поиска в кэше
 
@@ -601,35 +697,32 @@ ${matchCount > 0 ? `
 Или использовать \`get_cached_result\` для точного получения содержимого возле этих строк.
 ` : 'Совпадений не найдено.'}
 `.trim();
-        
+
         await updateUIPanel(tabId, 'SUCCESS', `Поиск завершён, найдено ${matchCount} совпадений`);
-        
+
         await injectToolResult(tabId, resultText);
-        
+
         const state = await getTabState(tabId);
         await setTabState(tabId, { ...state, resultInjected: true });
-        
+
     } catch (error) {
         console.error('[MCP Bridge] Search cached result error:', error);
         await handleToolError(tabId, 'search_cached_result', error);
     }
 }
 
-/**
- * Обработать вызов инструмента получения контекста из кэша
- */
 async function handleGetCacheContext(tabId, args) {
     try {
         const { cache_id, line_num, context_lines = 3 } = args;
-        
+
         if (!cache_id || !line_num) {
             throw new Error('Отсутствуют обязательные параметры: cache_id или line_num');
         }
-        
+
         await updateUIPanel(tabId, 'EXECUTING', `Получение контекста строки ${line_num}...`);
-        
+
         const result = await apiClient.getCacheContext(cache_id, line_num, context_lines);
-        
+
         const resultText = `
 # Контекст из кэша
 
@@ -641,14 +734,14 @@ async function handleGetCacheContext(tabId, args) {
 ${result.content}
 \`\`\`
 `.trim();
-        
+
         await updateUIPanel(tabId, 'SUCCESS', `Контекст получен успешно`);
-        
+
         await injectToolResult(tabId, resultText);
-        
+
         const state = await getTabState(tabId);
         await setTabState(tabId, { ...state, resultInjected: true });
-        
+
     } catch (error) {
         console.error('[MCP Bridge] Get cache context error:', error);
         await handleToolError(tabId, 'get_cache_context', error);
@@ -656,72 +749,60 @@ ${result.content}
 }
 
 async function handleToolError(tabId, toolName, error) {
-    // Построить подробное сообщение об ошибке
     let errorMessage = error.message || 'Неизвестная ошибка';
     let errorDetails = errorMessage;
-    let fullErrorText = errorMessage; // Полная ошибка для внедрения в поле ввода
-    
-    // Если есть подробный объект ошибки, извлечь больше информации
+    let fullErrorText = errorMessage;
+
     if (error.details && typeof error.details === 'object') {
         const details = error.details;
         errorMessage = details.error || errorMessage;
-        
-        // Построить подробную информацию об ошибке (для отображения во всплывающем окне)
+
         const errorParts = [`Тип ошибки: ${details.type || 'Error'}`];
         errorParts.push(`Сообщение об ошибке: ${details.error || errorMessage}`);
-        
+
         if (details.traceback) {
             errorParts.push(`\nСтек вызовов:\n${details.traceback}`);
         }
-        
+
         errorDetails = errorParts.join('\n');
-        
-        // Построить полную ошибку для внедрения (включая тип и стек)
+
         fullErrorText = errorMessage;
         if (details.type) {
             fullErrorText = `[${details.type}] ${fullErrorText}`;
         }
         if (details.traceback) {
-            // Взять ключевую часть стека (последние строки обычно самые полезные)
             const tracebackLines = details.traceback.split('\n');
-            const importantLines = tracebackLines.slice(-10); // Взять последние 10 строк
+            const importantLines = tracebackLines.slice(-10);
             fullErrorText += `\n\nСтек вызовов:\n${importantLines.join('\n')}`;
         }
     }
-    
+
     console.error('[MCP Bridge] Tool error details:', errorDetails);
-    
+
     const errorText = promptBuilder.formatToolErrorForModel(toolName, fullErrorText);
-    
+
     await updateUIPanel(tabId, 'ERROR', `Инструмент <strong>${toolName}</strong> не выполнился`, {
         title: 'Подробности ошибки',
         content: errorDetails
     });
-    
-    // Использовать умное внедрение вместо перезагрузки страницы
+
     await injectToolResult(tabId, errorText);
-    
-    // Пометить результат как внедрённый, чтобы избежать повторной отправки, но сохранить currentToolCall
+
     const state = await getTabState(tabId);
     await setTabState(tabId, { ...state, resultInjected: true });
 }
 
-/**
- * Внедрить результат выполнения инструмента в поле ввода и отправить
- */
 async function injectToolResult(tabId, resultText) {
     try {
-        // Получить конфигурацию текущего сайта
         const {api_list} = await chrome.storage.local.get('api_list');
         const currentHostname = await getCurrentHostname(tabId);
         const siteConfig = api_list?.find(site => site.hostname === currentHostname);
-        
+
         if (!siteConfig || !siteConfig.input) {
             console.error('[MCP Bridge] No input config found for:', currentHostname);
             return;
         }
 
-        // Отправить сообщение в content script для выполнения внедрения
         await chrome.tabs.sendMessage(tabId, {
             type: 'INJECT_TEXT_AND_SUBMIT',
             payload: {
@@ -734,9 +815,6 @@ async function injectToolResult(tabId, resultText) {
     }
 }
 
-/**
- * Получить hostname вкладки
- */
 async function getCurrentHostname(tabId) {
     try {
         const tab = await chrome.tabs.get(tabId);
@@ -805,57 +883,37 @@ function parseJsonSafely(str) {
     }
 }
 
-// Исправление: более точное определение нового диалога для разных сайтов
-/**
- * Проверить, является ли это новым диалогом
- * @param {object} body - Объект тела запроса
- * @param {object} siteConfig - Конфигурация сайта
- * @returns {boolean} - Является ли это новым диалогом
- */
 function checkIsNewConversation(body, siteConfig) {
-    // Если настроен newConversationFlag, использовать сконфигурированную логику
     if (siteConfig.newConversationFlag) {
         const flag = siteConfig.newConversationFlag;
-        
-        // Получить значение проверяемого поля
+
         let value;
         if (flag.from === 'requestBody') {
-            // Получить значение из тела запроса (здесь promptFilter не применяется, так как проверяется только флаг)
             value = getByPath(body, flag.path, siteConfig.isJsonString, null);
         }
-        // В будущем можно расширить другими источниками: headers, url и т. д.
-        
-        // Выполнить проверку в зависимости от типа
+
         if (flag.checkExists !== undefined && flag.checkExists !== null) {
-            // Проверить существование поля
             if (flag.checkExists === true) {
-                // Ожидается наличие поля
                 const exists = value !== undefined && value !== null;
-                
-                // Если также нужно проверить конкретное значение
+
                 if (exists && flag.checkValue !== undefined && flag.checkValue !== null) {
                     return checkValueMatch(value, flag.checkValue, flag.valueType);
                 }
-                
+
                 return exists;
             } else {
-                // Ожидается отсутствие поля
                 return value === undefined || value === null;
             }
         }
-        
-        // Если настроено только checkValue, сразу сравнить значения
+
         if (flag.checkValue !== undefined && flag.checkValue !== null) {
             return checkValueMatch(value, flag.checkValue, flag.valueType);
         }
-        
-        // Если конфигурация неполная, вернуть false (не новый диалог)
+
         console.warn('[MCP Bridge] Invalid newConversationFlag config:', flag);
         return false;
     }
-    
-    // Нет newConversationFlag — использовать старую жёстко закодированную логику
-    // Обратная совместимость
+
     if (siteConfig.name === 'chatgpt' && body.parent_message_id) {
         return body.parent_message_id.includes('00000000-0000-0000-0000-000000000000');
     }
@@ -864,21 +922,12 @@ function checkIsNewConversation(body, siteConfig) {
     return !body.conversation_id && !body.parent_message_id && !body.sessionId;
 }
 
-/**
- * Проверить, совпадает ли значение
- * @param {any} actualValue - Фактическое значение
- * @param {any} expectedValue - Ожидаемое значение
- * @param {string} valueType - Тип значения (string, number, boolean, null)
- * @returns {boolean} - Совпадает ли
- */
 function checkValueMatch(actualValue, expectedValue, valueType) {
-    // Если тип не указан, сравнить напрямую
     if (!valueType) {
         // eslint-disable-next-line eqeqeq
-        return actualValue == expectedValue; // Использовать == для допуска преобразования типов
+        return actualValue == expectedValue;
     }
-    
-    // Сравнить в соответствии с типом
+
     switch (valueType) {
         case 'string':
             return String(actualValue) === String(expectedValue);
@@ -894,26 +943,18 @@ function checkValueMatch(actualValue, expectedValue, valueType) {
     }
 }
 
-/**
- * Набор предопределённых функций-фильтров
- */
 const FILTER_PRESETS = {
-    // Найти элемент массива по значению поля и вернуть указанное поле
-    // Параметры: { arrayPath, matchField, matchValue, returnField }
-    // Поддержка массивов: arrayPath, returnField могут быть массивами
     findByField: (obj, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const returnFields = Array.isArray(params.returnField) ? params.returnField : [params.returnField];
-        
-        // Попробовать каждый arrayPath
+
         for (const arrayPath of arrayPaths) {
             const array = getValueByPath(obj, arrayPath);
             if (!Array.isArray(array)) continue;
-            
+
             const item = array.find(el => el[params.matchField] === params.matchValue);
             if (!item) continue;
-            
-            // Попробовать каждое returnField
+
             for (const returnField of returnFields) {
                 const value = getValueByPath(item, returnField);
                 if (value) return value;
@@ -921,54 +962,48 @@ const FILTER_PRESETS = {
         }
         return '';
     },
-    
-    // Отфильтровать массив по значению поля и объединить указанные поля
-    // Параметры: { arrayPath, matchField, matchValue, returnField, separator }
-    // Поддержка массивов: arrayPath, matchValue, returnField могут быть массивами
+
     filterAndJoin: (obj, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const matchValues = Array.isArray(params.matchValue) ? params.matchValue : [params.matchValue];
         const returnFields = Array.isArray(params.returnField) ? params.returnField : [params.returnField];
         const separator = params.separator || '\n\n';
-        
+
         const results = [];
-        
+
         for (const arrayPath of arrayPaths) {
             const array = getValueByPath(obj, arrayPath);
             if (!Array.isArray(array)) continue;
-            
+
             const filtered = array.filter(el => matchValues.includes(el[params.matchField]));
-            
+
             for (const item of filtered) {
                 for (const returnField of returnFields) {
                     const value = getValueByPath(item, returnField);
                     if (value) {
                         results.push(value);
-                        break; // Прервать после первого найденного допустимого поля
+                        break;
                     }
                 }
             }
         }
-        
+
         return results.join(separator);
     },
-    
-    // Получить значение поля первого элемента массива, соответствующего условию
-    // Параметры: { arrayPath, matchField, matchValues, returnField }
-    // Поддержка массивов: arrayPath, matchValues, returnField могут быть массивами
+
     findFirstMatch: (obj, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const matchValues = Array.isArray(params.matchValues) ? params.matchValues : [params.matchValues];
         const returnFields = Array.isArray(params.returnField) ? params.returnField : [params.returnField];
-        
+
         for (const arrayPath of arrayPaths) {
             const array = getValueByPath(obj, arrayPath);
             if (!Array.isArray(array)) continue;
-            
+
             for (const value of matchValues) {
                 const item = array.find(el => el[params.matchField] === value);
                 if (!item) continue;
-                
+
                 for (const returnField of returnFields) {
                     const fieldValue = getValueByPath(item, returnField);
                     if (fieldValue) return fieldValue;
@@ -977,21 +1012,18 @@ const FILTER_PRESETS = {
         }
         return '';
     },
-    
-    // Получить значение поля элемента массива по указанному индексу
-    // Параметры: { arrayPath, index, returnField }
-    // Поддержка массивов: arrayPath, returnField могут быть массивами
+
     getByIndex: (obj, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const returnFields = Array.isArray(params.returnField) ? params.returnField : [params.returnField];
-        
+
         for (const arrayPath of arrayPaths) {
             const array = getValueByPath(obj, arrayPath);
             if (!Array.isArray(array)) continue;
-            
+
             const item = array[params.index];
             if (!item) continue;
-            
+
             for (const returnField of returnFields) {
                 const value = getValueByPath(item, returnField);
                 if (value) return value;
@@ -999,13 +1031,10 @@ const FILTER_PRESETS = {
         }
         return '';
     },
-    
-    // Получить значение по указанному пути напрямую
-    // Параметры: { path }
-    // Поддержка массивов: path может быть массивом, вернуть первое непустое значение
+
     getPath: (obj, params) => {
         const paths = Array.isArray(params.path) ? params.path : [params.path];
-        
+
         for (const path of paths) {
             const value = getValueByPath(obj, path);
             if (value) return value;
@@ -1014,81 +1043,60 @@ const FILTER_PRESETS = {
     }
 };
 
-/**
- * Набор предопределённых функций-установщиков
- */
 const SETTER_PRESETS = {
-    // Найти элемент массива по значению поля и установить указанное поле
-    // Параметры: { arrayPath, matchField, matchValue, setField }
-    // Поддержка массивов: arrayPath, setField могут быть массивами
     setByField: (obj, value, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const setFields = Array.isArray(params.setField) ? params.setField : [params.setField];
-        
+
         for (const arrayPath of arrayPaths) {
             const array = getValueByPath(obj, arrayPath);
             if (!Array.isArray(array)) continue;
-            
+
             const item = array.find(el => el[params.matchField] === params.matchValue);
             if (!item) continue;
-            
-            // Установить все указанные поля
+
             for (const setField of setFields) {
                 setValueByPath(item, setField, value);
             }
-            
-            // Прервать после первого совпадения
+
             return;
         }
     },
-    
-    // Установить значение поля элемента массива по указанному индексу
-    // Параметры: { arrayPath, index, setField }
-    // Поддержка массивов: arrayPath, setField могут быть массивами
+
     setByIndex: (obj, value, params) => {
         const arrayPaths = Array.isArray(params.arrayPath) ? params.arrayPath : [params.arrayPath];
         const setFields = Array.isArray(params.setField) ? params.setField : [params.setField];
-        
+
         for (const arrayPath of arrayPaths) {
             const array = getValueByPath(obj, arrayPath);
             if (!Array.isArray(array)) continue;
-            
+
             const item = array[params.index];
             if (!item) continue;
-            
-            // Установить все указанные поля
+
             for (const setField of setFields) {
                 setValueByPath(item, setField, value);
             }
-            
+
             return;
         }
     },
-    
-    // Установить значение по указанному пути напрямую
-    // Параметры: { path }
-    // Поддержка массивов: path может быть массивом, будут установлены все пути
+
     setPath: (obj, value, params) => {
         const paths = Array.isArray(params.path) ? params.path : [params.path];
-        
+
         for (const path of paths) {
             setValueByPath(obj, path, value);
         }
     }
 };
 
-/**
- * Вспомогательная функция: получить значение по пути
- */
 function getValueByPath(obj, path) {
     if (!path) return obj;
     const parts = path.split('.');
     return parts.reduce((acc, part) => acc && acc[part], obj);
 }
 
-/**
- * Вспомогательная функция: установить значение по пути
- */
 function setValueByPath(obj, path, value) {
     if (!path) return;
     const parts = path.split('.');
@@ -1103,21 +1111,12 @@ function setValueByPath(obj, path, value) {
     }
 }
 
-/**
- * Применить пользовательскую логику фильтрации prompt
- * @param {any} value - Текущее значение (если есть promptFilter, здесь полный obj)
- * @param {object|string} filterConfig - Объект конфигурации фильтра или имя пресета
- * @param {object} rootObj - Корневой объект (полное тело запроса)
- * @param {any} currentTarget - Текущий целевой объект
- * @returns {any} - Отфильтрованное значение
- */
 function applyPromptFilter(value, filterConfig, rootObj, currentTarget) {
     if (!filterConfig) {
         return value;
     }
-    
+
     try {
-        // Если это строка, попробовать разобрать её как JSON
         if (typeof filterConfig === 'string') {
             try {
                 filterConfig = JSON.parse(filterConfig);
@@ -1126,27 +1125,26 @@ function applyPromptFilter(value, filterConfig, rootObj, currentTarget) {
                 return value;
             }
         }
-        
-        // Если это объект конфигурации
+
         if (typeof filterConfig === 'object' && filterConfig.preset) {
             const preset = FILTER_PRESETS[filterConfig.preset];
             if (!preset) {
                 console.error('[MCP Bridge] Unknown filter preset:', filterConfig.preset);
                 return value;
             }
-            
+
             const result = preset(value, filterConfig.params || {});
-            
+
             console.log('[MCP Bridge] Applied promptFilter preset:', {
                 preset: filterConfig.preset,
                 params: filterConfig.params,
                 outputType: typeof result,
                 outputPreview: typeof result === 'string' ? result.substring(0, 100) : result
             });
-            
+
             return result;
         }
-        
+
         console.warn('[MCP Bridge] Invalid promptFilter config:', filterConfig);
         return value;
     } catch (error) {
@@ -1157,25 +1155,23 @@ function applyPromptFilter(value, filterConfig, rootObj, currentTarget) {
 }
 
 function getByPath(obj, path, isJsonString, promptFilter) {
-    // Если настроен promptFilter, полностью использовать пользовательскую логику, игнорируя path
     if (promptFilter) {
         console.log('[MCP Bridge] Using promptFilter, ignoring path');
         return applyPromptFilter(obj, promptFilter, obj, obj);
     }
-    
+
     const parts = path.split('.');
-    
+
     if (isJsonString && parts.length >= 2) {
-        // Для JSON-строки требуется особая обработка
         const innerKey = parts.pop();
         const jsonFieldKey = parts.pop();
-        
+
         let target = obj;
         for (const part of parts) {
             if (!target) return undefined;
             target = target[part];
         }
-        
+
         if (target && typeof target === 'object' && jsonFieldKey) {
             try {
                 const jsonString = target[jsonFieldKey];
@@ -1190,7 +1186,6 @@ function getByPath(obj, path, isJsonString, promptFilter) {
         }
         return undefined;
     } else {
-        // Обычный путь
         return parts.reduce((acc, part) => acc && acc[part], obj);
     }
 }
@@ -1198,24 +1193,20 @@ function getByPath(obj, path, isJsonString, promptFilter) {
 function setByPath(obj, path, value, siteConfig) {
     const {isJsonString, promptFilter, promptSetFilter} = siteConfig;
     const parts = path.split('.');
-    
-    // Если настроен promptSetFilter, использовать пользовательскую логику установки значения
+
     if (promptSetFilter) {
         console.log('[MCP Bridge] Using promptSetFilter for setting value');
         try {
-            // Если это строка, попробовать разобрать её как JSON
             let setConfig = promptSetFilter;
             if (typeof setConfig === 'string') {
                 try {
                     setConfig = JSON.parse(setConfig);
                 } catch (e) {
                     console.error('[MCP Bridge] Failed to parse promptSetFilter as JSON:', e);
-                    // Продолжить с логикой по умолчанию
                     setConfig = null;
                 }
             }
-            
-            // Если это объект конфигурации
+
             if (setConfig && typeof setConfig === 'object' && setConfig.preset) {
                 const preset = SETTER_PRESETS[setConfig.preset];
                 if (preset) {
@@ -1229,26 +1220,19 @@ function setByPath(obj, path, value, siteConfig) {
         } catch (error) {
             console.error('[MCP Bridge] Failed to apply promptSetFilter:', error);
             console.error('[MCP Bridge] Filter config:', promptSetFilter);
-            // При неудаче продолжить с логикой по умолчанию
         }
     }
-    
+
     if (isJsonString && parts.length >= 2) {
-        // Для JSON-строки требуется особая обработка
-        // Пример: "messages.0.content.text" 
-        // - parts = ["messages", "0", "content", "text"]
-        // - Нужно найти поле "content", разобрать его, изменить внутреннее "text" и сериализовать обратно
-        
-        const innerKey = parts.pop(); // "text"
-        const jsonFieldKey = parts.pop(); // "content"
-        
-        // Перейти к объекту, содержащему JSON-строку
+        const innerKey = parts.pop();
+        const jsonFieldKey = parts.pop();
+
         let target = obj;
         for (const part of parts) {
             if (target === undefined || target === null) return;
             target = target[part];
         }
-        
+
         if (target && typeof target === 'object' && jsonFieldKey) {
             try {
                 const jsonString = target[jsonFieldKey];
@@ -1266,7 +1250,6 @@ function setByPath(obj, path, value, siteConfig) {
             }
         }
     } else {
-        // Обычная обработка пути
         const lastPart = parts.pop();
         let target = obj;
         for (const part of parts) {
@@ -1279,40 +1262,29 @@ function setByPath(obj, path, value, siteConfig) {
     }
 }
 
-/**
- * Обновить System Prompt и внедрить его в текущую страницу
- * @param {number} tabId - ID вкладки
- * @returns {Promise<Object>} Результат операции
- */
 async function handleRefreshSystemPrompt(tabId) {
     try {
         await updateUIPanel(tabId, 'EXECUTING', 'Получение актуального списка инструментов...');
 
-        // Получить список сервисов
         const services = await apiClient.getServices();
-        
-        // Построить полный начальный Prompt
+
         const systemPrompt = promptBuilder.buildInitialPrompt(services);
-        
+
         await updateUIPanel(tabId, 'SUCCESS', 'System Prompt обновлён, внедрение...');
 
-        // Получить конфигурацию текущего сайта
         const { api_list, auto_submit_prompt } = await chrome.storage.local.get(['api_list', 'auto_submit_prompt']);
         const currentHostname = await getCurrentHostname(tabId);
         const siteConfig = api_list?.find(site => site.hostname === currentHostname);
-        
+
         if (!siteConfig || !siteConfig.input) {
             throw new Error(`Для текущего сайта (${currentHostname}) не настроены параметры ввода`);
         }
 
-        // Создать конфигурацию ввода, в зависимости от пользовательской настройки решить, отправлять ли автоматически
         const inputConfig = {
             ...siteConfig.input,
-            // Если пользователь отключил автоотправку, не нажимать клавишу отправки
             submitKey: auto_submit_prompt ? siteConfig.input.submitKey : null
         };
 
-        // Отправить сообщение о внедрении
         await chrome.tabs.sendMessage(tabId, {
             type: 'INJECT_TEXT_AND_SUBMIT',
             payload: {
@@ -1322,8 +1294,7 @@ async function handleRefreshSystemPrompt(tabId) {
         });
 
         await updateUIPanel(tabId, 'SUCCESS', `System Prompt ${auto_submit_prompt ? 'внедрён и отправлен' : 'внедрён в поле ввода'}`);
-        
-        // Через 2 секунды очистить панель
+
         setTimeout(() => clearTabState(tabId), 2000);
 
         return { success: true };
@@ -1337,15 +1308,11 @@ async function handleRefreshSystemPrompt(tabId) {
     }
 }
 
-/**
- * Обработать содержимое, вставленное пользователем вручную (резервный вариант)
- */
 async function handleManualToolParse(tabId, content) {
     try {
         await updateUIPanel(tabId, 'EXECUTING', 'Разбор введённого вручную содержимого...');
 
-        // Использовать то же регулярное выражение для поиска вызова инструмента
-        const toolCallMatch = content.match(/<?\s*tool_code\s*>?([\s\S]*?)<\s*\/\s*tool_code\s*>/);
+        const toolCallMatch = content.match(TOOL_CODE_REGEX);
 
         if (!toolCallMatch) {
             await updateUIPanel(tabId, 'ERROR', 'В содержимом не найден тег вызова инструмента');
@@ -1362,7 +1329,6 @@ async function handleManualToolParse(tabId, content) {
 
         console.log('[MCP Bridge] Manual tool call parsed:', toolCallJson);
 
-        // Выполнить вызов инструмента
         const { tool_name, arguments: args } = toolCallJson;
         if (tool_name === 'list_tools_in_service') {
             await handleListTools(tabId, args.service_name);
@@ -1376,29 +1342,23 @@ async function handleManualToolParse(tabId, content) {
     }
 }
 
-/**
- * Повторно определить вызов инструмента из последнего UI-сообщения (возобновление с точки останова)
- */
 async function handleRedetectFromUI(tabId) {
     console.log('[MCP Bridge] handleRedetectFromUI вызван с tabId:', tabId);
-    
+
     try {
         await updateUIPanel(tabId, 'EXECUTING', 'Повторное определение вызова инструмента из UI...');
 
-        // Получить URL текущей вкладки
         const tab = await chrome.tabs.get(tabId);
         const currentUrl = new URL(tab.url).hostname;
-        
+
         console.log('[MCP Bridge] Current URL hostname:', currentUrl);
 
-        // Получить список конфигураций API
         const { api_list = [] } = await chrome.storage.local.get('api_list');
-        
+
         console.log('[MCP Bridge] api_list:', api_list);
-        
-        // Использовать поле hostname для сопоставления с конфигурацией сайта
+
         const siteConfig = api_list.find(item => item.hostname === currentUrl);
-        
+
         console.log('[MCP Bridge] Site config:', siteConfig);
 
         if (!siteConfig) {
@@ -1408,14 +1368,12 @@ async function handleRedetectFromUI(tabId) {
             return;
         }
 
-        // Проверить, настроен ли UI-разбор
         if (!siteConfig.uiParsing || !siteConfig.uiParsing.enabled) {
             await updateUIPanel(tabId, 'ERROR', 'Для текущего сайта не настроена функция UI-разбора');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             return;
         }
 
-        // Разобрать последнее сообщение из DOM страницы
         const response = await chrome.tabs.sendMessage(tabId, {
             type: 'PARSE_UI_CONTENT',
             payload: { uiConfig: siteConfig.uiParsing }
@@ -1429,8 +1387,7 @@ async function handleRedetectFromUI(tabId) {
 
         console.log('[MCP Bridge] Redetected UI content length:', response.content.length);
 
-        // Использовать разобранное содержимое для обнаружения вызова инструмента
-        const toolCallMatch = response.content.match(/<?\s*tool_code\s*>?([\s\S]*?)<\s*\/\s*tool_code\s*>/);
+        const toolCallMatch = response.content.match(TOOL_CODE_REGEX);
 
         if (!toolCallMatch) {
             await updateUIPanel(tabId, 'SUCCESS', 'Вызовов инструментов не обнаружено');
@@ -1440,12 +1397,8 @@ async function handleRedetectFromUI(tabId) {
 
         const toolCallJson = parseJsonSafely(toolCallMatch[1]);
         if (!toolCallJson || !toolCallJson.tool_name) {
-            // Отправить сообщение об ошибке модели
-            try {
-                JSON.parse(toolCallMatch[1])
-            } catch (e) {
-                await injectToolResult(tabId, `**Ошибка вызова инструмента!** \n\nСообщение об ошибке:\n\n${e.message}`)
-            }
+            // Тихо игнорируем ложное срабатывание, без внедрения ошибки в чат
+            console.warn('[MCP Bridge] Invalid tool_code JSON in redetect, ignoring');
             await updateUIPanel(tabId, 'ERROR', 'Обнаружен вызов инструмента, но формат неверен');
             setTimeout(() => destroyUIPanel(tabId), 3000);
             return;
@@ -1453,7 +1406,6 @@ async function handleRedetectFromUI(tabId) {
 
         console.log('[MCP Bridge] Redetected tool call:', toolCallJson);
 
-        // Выполнить вызов инструмента
         const { tool_name, arguments: args } = toolCallJson;
         if (tool_name === 'list_tools_in_service') {
             await handleListTools(tabId, args.service_name);
@@ -1462,7 +1414,7 @@ async function handleRedetectFromUI(tabId) {
         }
     } catch (error) {
         console.error('[MCP Bridge] Failed to redetect from UI:', error);
-        await updateUIPanel(tabId, 'ERROR', 'Повторное обнаружение не удалось: ' + error.message);
+        await updateUIPanel(tabId, 'ERROR', 'Повторное определение не удалось: ' + error.message);
         setTimeout(() => destroyUIPanel(tabId), 3000);
     }
 }
